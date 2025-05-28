@@ -7,22 +7,57 @@
 ## 🚀 主要功能
 
 ```mermaid
-graph TD
-    A[钉钉AI机器人] --> B[AI智能问答回复]
-    A --> C[知识库检索功能]
-    A --> D[快捷提单功能]
-    A --> E[JIRA任务监控]
-    A --> F[服务器管理]
+sequenceDiagram
+    actor User as 用户
+    participant Bot as 钉钉AI机器人
+    participant AI as AutoGen多智能体
+    participant KB as 知识库系统
+    participant Ticket as 工单系统
+    participant JIRA as JIRA平台
+    participant Server as 服务器系统
     
-    B --> B1[AutoGen多智能体]
-    C --> C1[向量数据库集成]
-    D --> D1[工单自动创建]
-    E --> E1[规则检查]
-    E --> E2[卡片推送]
-    E --> E3[待办创建]
-    F --> F1[SSH远程操作]
-    F --> F2[Dify服务升级]
-    F --> F3[AI日志分析]
+    User->>Bot: 发送消息
+    
+    %% AI智能问答流程
+    alt AI智能问答
+        Bot->>AI: 转发用户问题
+        AI->>AI: 多智能体协作处理
+        AI->>Bot: 返回智能回复
+        Bot->>User: 展示AI回答
+    
+    %% 知识库检索流程
+    else 知识库检索
+        Bot->>KB: 查询相关知识
+        KB->>KB: 向量数据库检索
+        KB->>Bot: 返回检索结果
+        Bot->>User: 展示知识库答案
+    
+    %% 快捷提单流程
+    else 快捷提单
+        Bot->>Ticket: 创建工单请求
+        Ticket->>Ticket: 工单自动创建
+        Ticket->>Bot: 返回工单状态
+        Bot->>User: 展示工单创建结果
+    
+    %% JIRA任务管理流程
+    else JIRA任务管理
+        Bot->>JIRA: 定时检查任务
+        JIRA->>JIRA: 执行规则检查
+        JIRA->>Bot: 返回检查结果
+        Bot->>User: 推送卡片通知
+        Bot->>JIRA: 创建待办任务
+    
+    %% 服务器管理流程
+    else 服务器管理
+        Bot->>Server: 执行管理命令
+        Server->>Server: 执行SSH操作/Dify升级
+        Server->>Bot: 返回执行结果
+        Bot->>User: 展示操作结果
+        Server->>Bot: 发送日志数据
+        Bot->>AI: 分析日志数据
+        AI->>Bot: 返回分析结果
+        Bot->>User: 展示日报/周报
+    end
 ```
 
 ### 核心功能
@@ -139,11 +174,12 @@ dingtalk-ai-robot/
 
 - [ ] 机器人AI智能问答和回复
 - [ ] 机器人问答可以对接知识库进行检索回复
-- [ ] 快捷提单功能的集成
+- [ ] 快捷批量提单功能的集成
 - [ ] 定时检查组内JIRA单符合标准规则
   - [ ] 群内推送卡片形态
   - [ ] 创建对应人的待办
 - [ ] 对话机器人可以自动智能升级多台服务器的Dify服务
+- [ ] 每周五根据本周的每天的日报，生成本周的周报（AI智能分析）
 
 ## 🤝 贡献指南
 
