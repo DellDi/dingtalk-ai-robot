@@ -37,7 +37,8 @@ async def lifespan(app: FastAPI):
     # 启动钉钉客户端（在单独线程中运行）
     dingtalk_client = DingTalkClient()
     loop = asyncio.get_event_loop()
-    dingtalk_future = loop.run_in_executor(thread_pool, dingtalk_client.start_forever)
+    # 正确调用钩钩客户端的start_forever方法
+    dingtalk_future = loop.run_in_executor(thread_pool, dingtalk_client.stream_client.start_forever)
     
     # 启动定时任务
     scheduler_task = asyncio.create_task(start_scheduler())

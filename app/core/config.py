@@ -34,9 +34,6 @@ class Settings(BaseSettings):
     
     # AI服务配置
     OPENAI_API_KEY: Optional[str] = Field(None, description="OpenAI API密钥")
-    AZURE_OPENAI_API_KEY: Optional[str] = Field(None, description="Azure OpenAI API密钥")
-    AZURE_OPENAI_ENDPOINT: Optional[str] = Field(None, description="Azure OpenAI端点")
-    AZURE_DEPLOYMENT_NAME: Optional[str] = Field(None, description="Azure OpenAI部署名称")
     
     # 知识库配置
     VECTOR_DB_TYPE: str = Field("chroma", description="向量数据库类型")
