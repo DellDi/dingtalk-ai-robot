@@ -132,7 +132,14 @@ class DingTalkClient:
         """停止钉钉Stream客户端"""
         if self.stream_client:
             logger.info("停止钉钉Stream客户端")
-            self.stream_client.stop()
+            try:
+                # 尝试关闭连接，如果SDK未来支持这个方法
+                if hasattr(self.stream_client, 'stop'):
+                    self.stream_client.stop()
+                # 设置为None以便垃圾回收
+                self.stream_client = None
+            except Exception as e:
+                logger.error(f"停止钉钉Stream客户端异常: {e}")
 
 
 class RobotMessageHandler(ChatbotHandler):
@@ -142,6 +149,8 @@ class RobotMessageHandler(ChatbotHandler):
         """初始化消息处理器"""
         super(ChatbotHandler, self).__init__()
         self.dingtalk_client = dingtalk_client
+        # 直接引用AI处理器，确保它存在
+        self.ai_handler = dingtalk_client.ai_handler
         
     async def process(self, callback):
         """处理接收到的消息"""
@@ -155,18 +164,21 @@ class RobotMessageHandler(ChatbotHandler):
             sender_id = incoming_message.sender_id
             text_content = incoming_message.text.content
             
-            # 处理消息（调用AI处理器）
-            response = await self.dingtalk_client.ai_handler.process_message(
+            # 处理消息（使用实例变量ai_handler）
+            response = await self.ai_handler.process_message(
                 text_content, 
                 sender_id, 
                 conversation_id
             )
             
-            # 发送回复
+            # 发送回复 - 正确调用DingTalkClient的方法
             if response:
+                # self.dingtalk_client是DingTalkClient实例，而不是DingTalkStreamClient
+                # 确保使用正确的方法发送消息
                 self.dingtalk_client.send_group_message(conversation_id, response)
             
             return AckMessage.STATUS_OK, "OK"
         except Exception as e:
             logger.error(f"处理消息异常: {e}")
-            return AckMessage.STATUS_ERROR, str(e)
+            # 使用字符串而非可能不存在的常量
+            return "ERROR", str(e)

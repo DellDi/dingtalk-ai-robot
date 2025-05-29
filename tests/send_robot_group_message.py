@@ -11,14 +11,22 @@ from alibabacloud_dingtalk.robot_1_0.client import Client as dingtalkrobot_1_0Cl
 from alibabacloud_dingtalk.robot_1_0 import models as dingtalkrobot__1__0_models
 from alibabacloud_tea_util import models as util_models
 import time
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 _token_cache = {"token": None, "expire": 0}
+
 
 def setup_logger():
     logger = logging.getLogger()
     handler = logging.StreamHandler()
     handler.setFormatter(
-        logging.Formatter('%(asctime)s %(name)-8s %(levelname)-8s %(message)s [%(filename)s:%(lineno)d]'))
+        logging.Formatter(
+            "%(asctime)s %(name)-8s %(levelname)-8s %(message)s [%(filename)s:%(lineno)d]"
+        )
+    )
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
     return logger
@@ -27,16 +35,22 @@ def setup_logger():
 def define_options():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        '--client_id', dest='client_id', required=True,
-        help='app_key or suite_key from https://open-dev.digntalk.com'
+        "--client_id",
+        dest="client_id",
+        default=os.getenv("DINGTALK_CLIENT_ID"),
+        help="app_key or suite_key from https://open-dev.digntalk.com",
     )
     parser.add_argument(
-        '--client_secret', dest='client_secret', required=True,
-        help='app_secret or suite_secret from https://open-dev.digntalk.com'
+        "--client_secret",
+        dest="client_secret",
+        default=os.getenv("DINGTALK_CLIENT_SECRET"),
+        help="app_secret or suite_secret from https://open-dev.digntalk.com",
     )
     parser.add_argument(
-        '--robot_code', dest='robot_code', required=True,
-        help='robot_code from https://open-dev.dingtalk.com'
+        "--robot_code",
+        dest="robot_code",
+        default=os.getenv("DINGTALK_ROBOT_CODE"),
+        help="robot_code from https://open-dev.dingtalk.com",
     )
     options = parser.parse_args()
     return options
@@ -52,12 +66,11 @@ def get_token(options):
     if _token_cache["token"] and now < _token_cache["expire"]:
         return _token_cache["token"]
     config = open_api_models.Config()
-    config.protocol = 'https'
-    config.region_id = 'central'
+    config.protocol = "https"
+    config.region_id = "central"
     client = dingtalkoauth2_1_0Client(config)
     get_access_token_request = dingtalkoauth_2__1__0_models.GetAccessTokenRequest(
-        app_key=options.client_id,
-        app_secret=options.client_secret
+        app_key=options.client_id, app_secret=options.client_secret
     )
     try:
         response = client.get_access_token(get_access_token_request)
@@ -82,10 +95,10 @@ def send_robot_group_message(access_token, open_conversation_id, options):
     """
     robot_code = options.robot_code
     msg_param = '{"content":"python-getting-start say：hello"}'
-    msg_key = 'sampleText'
+    msg_key = "sampleText"
     config = open_api_models.Config()
-    config.protocol = 'https'
-    config.region_id = 'central'
+    config.protocol = "https"
+    config.region_id = "central"
     client = dingtalkrobot_1_0Client(config)
     org_group_send_headers = dingtalkrobot__1__0_models.OrgGroupSendHeaders()
     org_group_send_headers.x_acs_dingtalk_access_token = access_token
@@ -93,13 +106,11 @@ def send_robot_group_message(access_token, open_conversation_id, options):
         msg_param=msg_param,
         msg_key=msg_key,
         open_conversation_id=open_conversation_id,
-        robot_code=robot_code
+        robot_code=robot_code,
     )
     try:
         response = client.org_group_send_with_options(
-            org_group_send_request,
-            org_group_send_headers,
-            util_models.RuntimeOptions()
+            org_group_send_request, org_group_send_headers, util_models.RuntimeOptions()
         )
         print("消息发送成功，返回：", response)
         return response
@@ -122,7 +133,7 @@ class EchoTextHandler(dingtalk_stream.ChatbotHandler):
             send_robot_group_message(access_token, open_conversation_id, self.options)
         else:
             print("access_token 获取失败")
-        return AckMessage.STATUS_OK, 'OK'
+        return AckMessage.STATUS_OK, "OK"
 
 
 def main():
@@ -131,11 +142,10 @@ def main():
     credential = dingtalk_stream.Credential(options.client_id, options.client_secret)
     client = dingtalk_stream.DingTalkStreamClient(credential)
     client.register_callback_handler(
-        dingtalk_stream.chatbot.ChatbotMessage.TOPIC,
-        EchoTextHandler(logger, options)
+        dingtalk_stream.chatbot.ChatbotMessage.TOPIC, EchoTextHandler(logger, options)
     )
     client.start_forever()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

@@ -13,23 +13,34 @@ authors = [
     {name = "Your Name", email = "your.email@example.com"}
 ]
 dependencies = [
-    "dingtalk-stream>=2.1.0",
-    "alibabacloud-dingtalk-robot>=2.1.16",
-    "fastapi>=0.109.0",
-    "uvicorn>=0.27.0",
+    "alibabacloud_dingtalk>=2.2.13",
+    "dingtalk_stream>=0.24.0",
+    "fastapi>=0.115.9",
+    "uvicorn>=0.34.2",
     "python-dotenv>=1.0.0",
-    "pydantic>=2.5.3",
+    "pydantic_settings>=2.7.1",
+    "python-multipart>=0.0.20",
+    "pydantic>=2.11.5",
     "autogen-agentchat>=0.5.7",
     "autogen-ext[openai]>=0.5.7",
-    "python-jose>=3.3.0",
-    "chromadb>=0.4.22",
-    "paramiko>=3.3.1",
-    "loguru>=0.7.2",
-    "schedule>=1.2.1",
+    "python-jose>=3.5.0",
+    "chromadb>=1.0.11",
+    "paramiko>=3.5.1",
+    "loguru>=0.7.3",
+    "schedule>=1.2.2",
     "jira>=3.5.2",
-    "httpx>=0.26.0",
-    "aiofiles>=23.2.1",
+    "httpx>=0.28.1",
+    "aiofiles>=24.1.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/DellDi/dingtalk-ai-robot"
+
+[tool.hatch.build]
+packages = ["app"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
 
 [project.optional-dependencies]
 dev = [

@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     """应用配置类"""
     
     # 钉钉开放平台配置
+    DINGTALK_APP_ID: str = Field(..., description="钉钉开放平台 App ID")
     DINGTALK_CLIENT_ID: str = Field(..., description="钉钉开放平台 Client ID (AppKey)")
     DINGTALK_CLIENT_SECRET: str = Field(..., description="钉钉开放平台 Client Secret (AppSecret)")
     DINGTALK_ROBOT_CODE: str = Field(..., description="钉钉机器人编码")
