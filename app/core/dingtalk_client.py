@@ -108,9 +108,11 @@ class DingTalkClient:
         headers = robot_models.OrgGroupSendHeaders()
         headers.x_acs_dingtalk_access_token = token
 
-        # msg_param = f'{{"content":"{message}"}}'
-
-        msg_param = {"text": message}
+        # 根据消息类型创建消息参数
+        if msg_type == "sampleMarkdown":
+            msg_param = {"title": "", "text": message}
+        else:
+            msg_param = {"content": message}
 
         logger.info(f"发送群消息: {msg_param}")
         request = robot_models.OrgGroupSendRequest(
@@ -148,22 +150,22 @@ class DingTalkClient:
         if not token:
             logger.error("发送私聊消息失败: 无法获取访问令牌")
             return None
-            
+
         config = open_api_models.Config(protocol="https", region_id="central")
         client = DingTalkRobotClient(config)
-        
+
         # 创建请求头
         headers = robot_models.BatchSendOTOHeaders()
         headers.x_acs_dingtalk_access_token = token
-        
+
         # 根据消息类型创建消息参数
         if msg_type == "sampleMarkdown":
-            msg_param = {"title": "钉钉机器人消息", "text": message}
+            msg_param = {"title": "", "text": message}
         else:
             msg_param = {"content": message}
-            
+
         logger.info(f"发送私聊消息: {msg_param} 到用户: {user_ids}")
-        
+
         # 创建请求
         request = robot_models.BatchSendOTORequest(
             robot_code=self.robot_code,
@@ -171,7 +173,7 @@ class DingTalkClient:
             msg_key=msg_type,
             msg_param=json.dumps(msg_param)
         )
-        
+
         try:
             response = client.batch_send_otowith_options(
                 request,

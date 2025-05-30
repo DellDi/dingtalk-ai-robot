@@ -11,6 +11,10 @@ from alibabacloud_dingtalk.robot_1_0.client import Client as dingtalkrobot_1_0Cl
 from alibabacloud_dingtalk.robot_1_0 import models as dingtalkrobot__1__0_models
 from alibabacloud_tea_util import models as util_models
 import time
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 _token_cache = {"token": None, "expire": 0}
 
@@ -27,15 +31,15 @@ def setup_logger():
 def define_options():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        '--client_id', dest='client_id', required=True,
+        '--client_id', dest='client_id', default=os.getenv("DINGTALK_CLIENT_ID"), required=True,
         help='app_key or suite_key from https://open-dev.digntalk.com'
     )
     parser.add_argument(
-        '--client_secret', dest='client_secret', required=True,
+        '--client_secret', dest='client_secret', default=os.getenv("DINGTALK_CLIENT_SECRET"), required=True,
         help='app_secret or suite_secret from https://open-dev.digntalk.com'
     )
     parser.add_argument(
-        '--robot_code', dest='robot_code', required=True,
+        '--robot_code', dest='robot_code', default=os.getenv("DINGTALK_ROBOT_CODE"), required=True,
         help='robot_code from https://open-dev.dingtalk.com'
     )
     parser.add_argument(
