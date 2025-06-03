@@ -138,6 +138,15 @@ class JiraBatchAgent:
             termination_condition=self.termination_condition,
         )
 
+    async def process(self, message: dict) -> dict:
+        """
+        处理 JIRA 请求的统一入口
+        :param message: 包含 'batch' 字段时为批量请求
+        """
+        if message.get("batch"):
+            return await self.batch_process_jira_issues(message)
+        return await self.single_jira_process(message)
+
     def _extract_json_from_text(self, text: str) -> Optional[List[Dict[str, Any]]]:
         """尝试从文本中提取JSON数组。"""
         try:

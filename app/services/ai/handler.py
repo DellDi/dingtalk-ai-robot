@@ -20,7 +20,7 @@ from autogen_core import CancellationToken
 
 from app.core.config import settings
 from app.services.knowledge.retriever import KnowledgeRetriever
-
+from app.services.ai.jira_batch_agent import JiraBatchAgent
 
 class AIMessageHandler:
     """AI消息处理器，基于AutoGen实现多智能体对话"""
@@ -31,6 +31,9 @@ class AIMessageHandler:
         self._setup_api_keys()
         self._init_agents()
         self.conversation_contexts: Dict[str, List[Dict[str, Any]]] = {}
+        # 初始化JIRA批处理智能体
+        self.jira_batch_agent = JiraBatchAgent()
+        self._register_intent_handlers()
 
     def _setup_api_keys(self):
         """设置API密钥"""
@@ -84,20 +87,6 @@ class AIMessageHandler:
             model_client=model_client,
         )
 
-        # 创建JIRA工单专家智能体
-        self.jira_agent = AssistantAgent(
-            name="jira",
-            system_message="""你是一个JIRA工单管理专家，负责：
-1. 帮助用户创建JIRA工单
-2. 检查JIRA工单是否符合规范
-3. 分配任务和创建待办
-
-当需要处理JIRA相关请求时，请确保获取所有必要信息，包括标题、描述、优先级等。
-""",
-            model_client=model_client,
-            description="JIRA工单管理专家",
-        )
-
         # 创建服务器管理专家智能体
         self.server_agent = AssistantAgent(
             name="server",
@@ -111,20 +100,28 @@ class AIMessageHandler:
             model_client=model_client,
         )
 
+    def _register_intent_handlers(self):
+        """注册意图处理器"""
+        self.intent_handlers = {
+            "jira": self._handle_jira_intent  # JIRA类型绑定批处理器
+        }
+
+    async def _handle_jira_intent(self, message: dict) -> dict:
+        """处理JIRA类型请求"""
+        return await self.jira_batch_agent.process(message)
+
     async def process_message(
         self, text: str, sender_id: str, conversation_id: str
     ) -> Optional[str]:
-        """
-        处理接收到的消息，使用AutoGen多智能体生成回复
-
-        Args:
-            text: 消息文本内容
-            sender_id: 发送者ID
-            conversation_id: 会话ID
-
-        Returns:
-            Optional[str]: 生成的回复，如果处理失败则返回None
-        """
+        """处理消息入口"""
+        # 意图识别
+        intent = self._detect_intent(text)
+        
+        # 优先使用注册的意图处理器
+        if intent in self.intent_handlers:
+            return await self.intent_handlers[intent]({"text": text, "sender_id": sender_id})
+            
+        # 默认智能体处理流程
         try:
             logger.info(f"处理来自 {sender_id} 的消息: {text}")
 
@@ -149,16 +146,8 @@ class AIMessageHandler:
                 return self._extract_last_response(chat_res)
 
             elif "jira" in text.lower() or "工单" in text or "任务" in text:
-                # 使用JIRA专家智能体
-                # 创建消息列表
-                messages = [TextMessage(content=text, source=self.user_proxy.name)]
-                # 发送消息并获取响应
-                chat_res = await self.jira_agent.on_messages(
-                    messages, 
-                    CancellationToken()
-                )
-
-                return self._extract_last_response(chat_res)
+                # 使用JIRA批处理智能体
+                return await self.jira_batch_agent.process({"text": text, "sender_id": sender_id})
 
             elif (
                 "服务器" in text
@@ -192,6 +181,11 @@ class AIMessageHandler:
         except Exception as e:
             logger.error(f"处理消息异常: {e}")
             return "抱歉，处理您的请求时出现了问题，请稍后再试。"
+
+    def _detect_intent(self, text: str) -> str:
+        """意图识别"""
+        # TODO: 实现意图识别逻辑
+        pass
 
     def _extract_last_response(self, chat_result) -> str:
         """从聊天结果中提取最后一个回复"""
