@@ -146,8 +146,12 @@ class AIMessageHandler:
                 return self._extract_last_response(chat_res)
 
             elif "jira" in text.lower() or "工单" in text or "任务" in text:
-                # 使用JIRA批处理智能体
-                return await self.jira_batch_agent.process({"text": text, "sender_id": sender_id, "conversation_id": conversation_id})
+                # 直接交给批量JIRA智能体（已内置账号处理）
+                return await self.jira_batch_agent.process({
+                    "text": text,
+                    "sender_id": sender_id,
+                    "conversation_id": conversation_id
+                })
 
             elif (
                 "服务器" in text

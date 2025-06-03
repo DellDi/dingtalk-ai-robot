@@ -15,6 +15,30 @@ from autogen_ext.models.openai import OpenAIChatCompletionClient
 from loguru import logger
 
 
+import re
+from app.db_utils import get_jira_account, save_jira_account
+
+class JiraAccountAgent:
+    JIRA_ACCOUNT_REGEX = r"用户名[:：]\s*(\S+)\s*密码[:：]\s*(\S+)"
+    def __init__(self, llm_param_extractor=None):
+        self.llm_param_extractor = llm_param_extractor  # 可注入大模型参数提取方法
+
+    async def extract_and_save_account(self, user_id: str, text: str) -> str:
+        user_info = get_jira_account(user_id)
+        if user_info:
+            return ""  # 已有账号，直接返回空串代表无需处理
+        match = re.search(self.JIRA_ACCOUNT_REGEX, text)
+        if match:
+            username, password = match.groups()
+            save_jira_account(user_id, username, password)
+            return "账号保存成功，请重新输入提单内容。"
+        if self.llm_param_extractor:
+            creds = await self.llm_param_extractor(text)
+            if creds and "username" in creds and "password" in creds:
+                save_jira_account(user_id, creds["username"], creds["password"])
+                return "账号保存成功，请重新输入提单内容。"
+        return "请输入你的JIRA账号信息（格式如下）：\n用户名: your_jira_username\n密码: your_jira_password"
+
 class JiraBatchAgent:
     def __init__(self):
         # 初始化大语言模型客户端
@@ -32,6 +56,8 @@ class JiraBatchAgent:
                 "structured_output": False,
             },
         )
+        # 封装账号提取智能体
+        self.account_agent = JiraAccountAgent(llm_param_extractor=getattr(self, "extract_jira_credentials", None))
 
         # 创建需求分析智能体 - 负责将需求转化为结构化的提单
         self.ticket_clarification_agent = AssistantAgent(
@@ -140,14 +166,17 @@ class JiraBatchAgent:
 
     async def process(self, input: {"text": str, "sender_id": str, "conversation_id": str}) -> dict:
         """
-        处理 JIRA 请求的统一入口
-        :param user_input: 用户输入
+        处理 JIRA 请求的统一入口，优先处理账号信息。
+        :param input: 用户输入
         """
         logger.info(f"开始处理用户消息: {input}")
         text = input.get("text")
-        # sender_id = input.get("sender_id")
-        # conversation_id = input.get("conversation_id")
-
+        user_id = input.get("sender_id")
+        # 1. 账号信息智能体优先处理
+        account_result = await self.account_agent.extract_and_save_account(user_id, text)
+        if account_result:  # 有提示语，说明账号未补全，直接返回提示
+            return {"content": account_result}
+        # 2. 账号已齐全，进入批量提单主流程
         return await self.process_message(text)
 
     def _extract_json_from_text(self, text: str) -> Optional[List[Dict[str, Any]]]:
