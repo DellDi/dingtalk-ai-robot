@@ -138,14 +138,17 @@ class JiraBatchAgent:
             termination_condition=self.termination_condition,
         )
 
-    async def process(self, message: dict) -> dict:
+    async def process(self, input: {"text": str, "sender_id": str, "conversation_id": str}) -> dict:
         """
         处理 JIRA 请求的统一入口
-        :param message: 包含 'batch' 字段时为批量请求
+        :param user_input: 用户输入
         """
-        if message.get("batch"):
-            return await self.batch_process_jira_issues(message)
-        return await self.single_jira_process(message)
+        logger.info(f"开始处理用户消息: {input}")
+        text = input.get("text")
+        # sender_id = input.get("sender_id")
+        # conversation_id = input.get("conversation_id")
+
+        return await self.process_message(text)
 
     def _extract_json_from_text(self, text: str) -> Optional[List[Dict[str, Any]]]:
         """尝试从文本中提取JSON数组。"""
@@ -190,38 +193,33 @@ class JiraBatchAgent:
         #         if hasattr(message, "source") and hasattr(message, "content"):
         #             logger.debug(f"[{message.source}] {message.content[:100]}...")
 
+        # result = await self.team.run(task=user_message)
+        # assert isinstance(result.messages[-1], TextMessage)
+        # print(result.messages[-1].content)
+
         # 记录处理完成的状态
         logger.info(f"团队处理完成，终止原因: {result.stop_reason if result else 'Unknown'}")
 
-        # 如果没有获得结果，返回空列表
-        if not result:
+        if not result or not getattr(result, 'messages', None):
             logger.error("团队处理失败，未返回有效结果")
             return []
 
-        # 从最后一个验证器的消息中提取JSON
-        for message in reversed(result.messages):
-            if message.source == "json_validator" and "VALID_JSON" in message.content:
-                # 找到前一条来自parameter_extractor的消息
-                for prev_message in reversed(result.messages):
-                    if prev_message.source == "parameter_extractor":
-                        json_output_text = prev_message.content
-                        parsed_json = self._extract_json_from_text(json_output_text)
-                        if parsed_json:
-                            logger.info(f"成功提取JSON，包含 {len(parsed_json)} 个项目")
-                            return parsed_json
-
-        # 如果无法找到有效的JSON，尝试从所有消息中提取
-        for message in reversed(result.messages):
-            if message.source == "parameter_extractor":
-                json_output_text = message.content
-                parsed_json = self._extract_json_from_text(json_output_text)
+        final_message = result.messages[-1]
+        final_prev_message = result.messages[-2]
+        # 类型断言：确保最终消息为TextMessage
+        if isinstance(final_message, TextMessage) and isinstance(final_prev_message, TextMessage):
+            if "VALID_JSON" in final_message.content:
+                parsed_json = self._extract_json_from_text(final_prev_message.content)
                 if parsed_json:
-                    logger.info(f"从参数提取器消息中提取JSON，包含 {len(parsed_json)} 个项目")
+                    logger.info(
+                        f"成功提取JSON，包含 {len(parsed_json)} 个项目, 消耗情况说明: {final_message.models_usage}"
+                    )
                     return parsed_json
+                else:
+                    logger.warning("最终消息为TextMessage，但未成功提取JSON")
 
         logger.error("无法从团队处理结果中提取有效JSON")
         return []
-
 
 # --- 使用示例 ---
 async def main():

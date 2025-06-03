@@ -91,7 +91,7 @@ class DingTalkClient:
     def send_group_message(self, conversation_id: str, message: str, msg_type: str = "sampleMarkdown"):
         """
         发送群消息
-        
+
         Args:
             conversation_id: 会话ID
             message: 消息内容
@@ -134,15 +134,15 @@ class DingTalkClient:
             logger.error(f"发送群消息失败: {e}")
             return None
 
-    def send_private_message(self, user_ids: list, message: str, msg_type: str = "sampleText"):
+    def send_private_message(self, user_ids: list, message: str, msg_type: str = "sampleMarkdown"):
         """
         发送私聊消息到指定用户
-        
+
         Args:
             user_ids: 用户ID列表
             message: 消息内容
             msg_type: 消息类型，默认为文本消息
-            
+
         Returns:
             响应对象或None（失败时）
         """
@@ -216,7 +216,7 @@ class RobotMessageHandler(ChatbotHandler):
         super(ChatbotHandler, self).__init__()
         # 将客户端实例存储为类变量
         # 注意：类型提示可能导致错误，移除以避免混淆
-        self._client = dingtalk_client  
+        self._client = dingtalk_client
 
         # 获取AI处理器实例，假设它在dingtalk_client中存在
         if hasattr(dingtalk_client, 'ai_handler'):
@@ -254,8 +254,8 @@ class RobotMessageHandler(ChatbotHandler):
                 return "ERROR", "系统内部错误"
 
             response = await self.ai_handler.process_message(
-                text_content, 
-                sender_id, 
+                text_content,
+                sender_id,
                 conversation_id
             )
 

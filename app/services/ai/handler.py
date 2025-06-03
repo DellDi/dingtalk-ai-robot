@@ -108,7 +108,7 @@ class AIMessageHandler:
 
     async def _handle_jira_intent(self, message: dict) -> dict:
         """处理JIRA类型请求"""
-        return await self.jira_batch_agent.process(message)
+        return await self.jira_batch_agent.process(message["text"])
 
     async def process_message(
         self, text: str, sender_id: str, conversation_id: str
@@ -116,11 +116,11 @@ class AIMessageHandler:
         """处理消息入口"""
         # 意图识别
         intent = self._detect_intent(text)
-        
+
         # 优先使用注册的意图处理器
         if intent in self.intent_handlers:
             return await self.intent_handlers[intent]({"text": text, "sender_id": sender_id})
-            
+
         # 默认智能体处理流程
         try:
             logger.info(f"处理来自 {sender_id} 的消息: {text}")
@@ -139,7 +139,7 @@ class AIMessageHandler:
                 messages = [TextMessage(content=context_message, source=self.user_proxy.name)]
                 # 发送消息并获取响应
                 chat_res = await self.knowledge_agent.on_messages(
-                    messages, 
+                    messages,
                     CancellationToken()
                 )
 
@@ -147,7 +147,7 @@ class AIMessageHandler:
 
             elif "jira" in text.lower() or "工单" in text or "任务" in text:
                 # 使用JIRA批处理智能体
-                return await self.jira_batch_agent.process({"text": text, "sender_id": sender_id})
+                return await self.jira_batch_agent.process({"text": text, "sender_id": sender_id, "conversation_id": conversation_id})
 
             elif (
                 "服务器" in text
@@ -160,7 +160,7 @@ class AIMessageHandler:
                 messages = [TextMessage(content=text, source=self.user_proxy.name)]
                 # 发送消息并获取响应
                 chat_res = await self.server_agent.on_messages(
-                    messages, 
+                    messages,
                     CancellationToken()
                 )
 
@@ -172,7 +172,7 @@ class AIMessageHandler:
                 messages = [TextMessage(content=text, source=self.user_proxy.name)]
                 # 发送消息并获取响应
                 chat_res = await self.assistant.on_messages(
-                    messages, 
+                    messages,
                     CancellationToken()
                 )
 
