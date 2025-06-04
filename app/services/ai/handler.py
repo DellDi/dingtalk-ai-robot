@@ -15,12 +15,13 @@ from loguru import logger
 # 导入最新的AutoGen v0.5 AgentChat API
 from autogen_agentchat.agents import AssistantAgent, UserProxyAgent
 from autogen_agentchat.messages import TextMessage
-from autogen_ext.models.openai import OpenAIChatCompletionClient
+from .openai_client import get_openai_client
 from autogen_core import CancellationToken
 
 from app.core.config import settings
 from app.services.knowledge.retriever import KnowledgeRetriever
 from app.services.ai.jira_batch_agent import JiraBatchAgent
+
 
 class AIMessageHandler:
     """AI消息处理器，基于AutoGen实现多智能体对话"""
@@ -46,18 +47,7 @@ class AIMessageHandler:
 
     def _init_agents(self):
         """初始化智能体"""
-        model_client = OpenAIChatCompletionClient(
-            model="qwen-turbo-latest",
-            api_key=os.getenv("OPENAI_API_KEY"),
-            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-            model_info={
-                "vision": True,
-                "function_calling": True,
-                "json_output": False,
-                "family": ModelFamily.ANY,
-                "structured_output": False,
-            },
-        )
+        model_client = get_openai_client(model_info={"json_output": False})
 
         # 创建基础助手智能体
         self.assistant = AssistantAgent(
@@ -102,9 +92,7 @@ class AIMessageHandler:
 
     def _register_intent_handlers(self):
         """注册意图处理器"""
-        self.intent_handlers = {
-            "jira": self._handle_jira_intent  # JIRA类型绑定批处理器
-        }
+        self.intent_handlers = {"jira": self._handle_jira_intent}  # JIRA类型绑定批处理器
 
     async def _handle_jira_intent(self, message: dict) -> dict:
         """处理JIRA类型请求"""
@@ -138,20 +126,15 @@ class AIMessageHandler:
                 # 创建消息列表
                 messages = [TextMessage(content=context_message, source=self.user_proxy.name)]
                 # 发送消息并获取响应
-                chat_res = await self.knowledge_agent.on_messages(
-                    messages,
-                    CancellationToken()
-                )
+                chat_res = await self.knowledge_agent.on_messages(messages, CancellationToken())
 
                 return self._extract_last_response(chat_res)
 
             elif "jira" in text.lower() or "工单" in text or "任务" in text:
                 # 直接交给批量JIRA智能体（已内置账号处理）
-                return await self.jira_batch_agent.process({
-                    "text": text,
-                    "sender_id": sender_id,
-                    "conversation_id": conversation_id
-                })
+                return await self.jira_batch_agent.process(
+                    {"text": text, "sender_id": sender_id, "conversation_id": conversation_id}
+                )
 
             elif (
                 "服务器" in text
@@ -163,10 +146,7 @@ class AIMessageHandler:
                 # 创建消息列表
                 messages = [TextMessage(content=text, source=self.user_proxy.name)]
                 # 发送消息并获取响应
-                chat_res = await self.server_agent.on_messages(
-                    messages,
-                    CancellationToken()
-                )
+                chat_res = await self.server_agent.on_messages(messages, CancellationToken())
 
                 return self._extract_last_response(chat_res)
 
@@ -175,10 +155,7 @@ class AIMessageHandler:
                 # 创建消息列表
                 messages = [TextMessage(content=text, source=self.user_proxy.name)]
                 # 发送消息并获取响应
-                chat_res = await self.assistant.on_messages(
-                    messages,
-                    CancellationToken()
-                )
+                chat_res = await self.assistant.on_messages(messages, CancellationToken())
 
                 return self._extract_last_response(chat_res)
 
@@ -196,16 +173,18 @@ class AIMessageHandler:
         try:
             # AutoGen v0.5+ 中，响应是 Response 对象，其中包含 chat_message 属性
             # chat_message 是一个消息对象，包含 content 属性
-            if hasattr(chat_result, 'chat_message') and hasattr(chat_result.chat_message, 'content'):
+            if hasattr(chat_result, "chat_message") and hasattr(
+                chat_result.chat_message, "content"
+            ):
                 return chat_result.chat_message.content
 
             # 兼容旧版API，如果还有chat_history结构
-            if hasattr(chat_result, 'chat_history') and chat_result.chat_history:
+            if hasattr(chat_result, "chat_history") and chat_result.chat_history:
                 # 获取助手的最后一条消息
                 for message in reversed(chat_result.chat_history):
-                    if hasattr(message, 'role') and message.role == "assistant":
+                    if hasattr(message, "role") and message.role == "assistant":
                         return message.content
-                    elif hasattr(message, 'source') and message.source.endswith('agent'):
+                    elif hasattr(message, "source") and message.source.endswith("agent"):
                         return message.content
 
             logger.warning(f"无法解析聊天结果：{chat_result}")

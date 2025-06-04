@@ -11,15 +11,16 @@ from autogen_agentchat.base import TaskResult
 from autogen_agentchat.conditions import TextMentionTermination, ExternalTermination
 from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_agentchat.ui import Console
-from autogen_ext.models.openai import OpenAIChatCompletionClient
+from .openai_client import get_openai_client
 from loguru import logger
-
 
 import re
 from app.db_utils import get_jira_account, save_jira_account
 
+
 class JiraAccountAgent:
     JIRA_ACCOUNT_REGEX = r"用户名[:：]\s*(\S+)\s*密码[:：]\s*(\S+)"
+
     def __init__(self, llm_param_extractor=None):
         self.llm_param_extractor = llm_param_extractor  # 可注入大模型参数提取方法
 
@@ -39,25 +40,61 @@ class JiraAccountAgent:
                 return "账号保存成功，请重新输入提单内容。"
         return "请输入你的JIRA账号信息（格式如下）：\n用户名: your_jira_username\n密码: your_jira_password"
 
+    async def handle_agent_params(self, text: str) -> Optional[Dict[str, Any]]:
+        """
+        通过大模型参数提取- JIRA账号信息、JIRA密码
+        出参格式：
+        {
+            "username": "jira_username",
+            "password": "jira_password"
+        }
+        """
+        model_client = get_openai_client()
+
+        params_agent = AssistantAgent(
+            name="parameter_extractor",
+            model_client=model_client,
+            system_message="""你是一位专业的参数提取专家，负责将用户输入的文本转换为JSON格式的参数。用户的输入中可能包含
+                1. JIRA账号信息 - 用户名
+                2. JIRA密码 - 用户密码
+            请提取出上述信息，并以JSON格式返回。
+            输出json格式：
+            {
+                "username": "jira_username",
+                "password": "jira_password"
+            }
+            """,
+        )
+
+        messages = [TextMessage(content=text, source="user")]
+        chat_res = await params_agent.on_messages(messages, CancellationToken())
+        return self._extract_last_response(chat_res)
+
+    def _extract_last_response(self, chat_res: List[ChatMessage]):
+        """
+        提取最后一个消息的响应
+        """
+        if not chat_res:
+            return None
+        last_message = chat_res[-1]
+        if isinstance(last_message, TextMessage):
+            try:
+                return json.loads(last_message.content)
+            except json.JSONDecodeError:
+                logger.warning(f"Error decoding JSON from text: {last_message.content}")
+            except Exception as e:
+                logger.error(f"An unexpected error occurred during JSON extraction: {e}")
+        return None
+
+
 class JiraBatchAgent:
     def __init__(self):
         # 初始化大语言模型客户端
-        self.model_client = OpenAIChatCompletionClient(
-            model=os.getenv("OPENAI_MODEL", "qwen-turbo-latest"),
-            api_key=os.getenv("OPENAI_API_KEY"),
-            base_url=os.getenv(
-                "OPENAI_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"
-            ),
-            model_info={
-                "vision": False,
-                "function_calling": True,
-                "json_output": True,  # 优化JSON输出格式支持
-                "family": ModelFamily.ANY,
-                "structured_output": False,
-            },
-        )
+        self.model_client = get_openai_client()
         # 封装账号提取智能体
-        self.account_agent = JiraAccountAgent(llm_param_extractor=getattr(self, "extract_jira_credentials", None))
+        self.account_agent = JiraAccountAgent(
+            llm_param_extractor=getattr(self, "extract_jira_credentials", None)
+        )
 
         # 创建需求分析智能体 - 负责将需求转化为结构化的提单
         self.ticket_clarification_agent = AssistantAgent(
@@ -229,7 +266,7 @@ class JiraBatchAgent:
         # 记录处理完成的状态
         logger.info(f"团队处理完成，终止原因: {result.stop_reason if result else 'Unknown'}")
 
-        if not result or not getattr(result, 'messages', None):
+        if not result or not getattr(result, "messages", None):
             logger.error("团队处理失败，未返回有效结果")
             return []
 
@@ -249,6 +286,7 @@ class JiraBatchAgent:
 
         logger.error("无法从团队处理结果中提取有效JSON")
         return []
+
 
 # --- 使用示例 ---
 async def main():
