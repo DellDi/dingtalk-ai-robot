@@ -110,7 +110,7 @@ class DingTalkClient:
 
         # 根据消息类型创建消息参数
         if msg_type == "sampleMarkdown":
-            msg_param = {"title": "", "text": message}
+            msg_param = {"title": "智慧数据机器人", "text": message}
         else:
             msg_param = {"content": message}
 
@@ -160,7 +160,7 @@ class DingTalkClient:
 
         # 根据消息类型创建消息参数
         if msg_type == "sampleMarkdown":
-            msg_param = {"title": "", "text": message}
+            msg_param = {"title": "智慧数据机器人", "text": message}
         else:
             msg_param = {"content": message}
 

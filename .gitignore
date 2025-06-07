@@ -6,3 +6,6 @@ __pycache__
 
 # 虚拟环境
 .venv
+
+# 本地数据库
+user_data.db

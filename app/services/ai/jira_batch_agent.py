@@ -7,25 +7,26 @@ from autogen_core.models import ModelFamily
 from autogen_core import CancellationToken
 from autogen_agentchat.agents import AssistantAgent, UserProxyAgent
 from autogen_agentchat.messages import TextMessage
-from autogen_agentchat.base import TaskResult
+from autogen_agentchat.base import Response, TaskResult
 from autogen_agentchat.conditions import TextMentionTermination, ExternalTermination
 from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_agentchat.ui import Console
-from .openai_client import get_openai_client
 from loguru import logger
 
 import re
 from app.db_utils import get_jira_account, save_jira_account
-from .jira_bulk_creator import JiraTicketCreator # 新增导入
+from app.services.ai.jira_bulk_creator import JiraTicketCreator # 新增导入
+from app.services.ai.openai_client import get_openai_client
 
 
 class JiraAccountAgent:
     JIRA_ACCOUNT_REGEX = r"用户名[:：]\s*(\S+)\s*密码[:：]\s*(\S+)"
 
-    def __init__(self, llm_param_extractor=None):
-        self.llm_param_extractor = llm_param_extractor  # 可注入大模型参数提取方法
+    def __init__(self):
+        pass
 
-    async def extract_and_save_account(self, user_id: str, text: str) -> str:
+    async def extract_and_save_account(self, user_list: list, text: str) -> str:
+        user_id = user_list[0]
         user_info = get_jira_account(user_id)
         if user_info:
             return ""  # 已有账号，直接返回空串代表无需处理
@@ -34,15 +35,15 @@ class JiraAccountAgent:
             username, password = match.groups()
             save_jira_account(user_id, username, password)
             return "账号保存成功，请重新输入提单内容。"
-        if self.llm_param_extractor: # pragma: no cover
-            # This part might be harder to cover in unit tests without mocking llm_param_extractor
-            creds = await self.llm_param_extractor(text)
-            if creds and "username" in creds and "password" in creds:
-                save_jira_account(user_id, creds["username"], creds["password"])
-                return "账号保存成功，请重新输入提单内容。"
-        return "请输入你的JIRA账号信息（格式如下）：\n用户名: your_jira_username\n密码: your_jira_password"
+        creds = await self.handle_agent_params(text)
+        if creds and isinstance(json.loads(creds), dict) and "username" in json.loads(creds) and "password" in json.loads(creds):
+            user_info = json.loads(creds)
+            username, password = user_info["username"], user_info["password"]
+            save_jira_account(user_id, username, password)
+            return "账号保存成功，请重新输入提单内容。"
+        return "请输入你的**JIRA账号信息**（格式如下）：配置jira信息\n**用户名**: `your_jira_username`\n**密码**: `your_jira_password`"
 
-    async def handle_agent_params(self, text: str) -> Optional[Dict[str, Any]]: # pragma: no cover
+    async def handle_agent_params(self, text: str) -> Optional[Dict[str, Any]]:
         """
         通过大模型参数提取- JIRA账号信息、JIRA密码
         出参格式：
@@ -51,34 +52,40 @@ class JiraAccountAgent:
             "password": "jira_password"
         }
         """
-        model_client = get_openai_client()
+        model_client = get_openai_client(temperature=0)
 
         params_agent = AssistantAgent(
-            name="parameter_extractor_account", # Renamed for clarity if there are other extractors
+            name="parameter_extractor_account",
             model_client=model_client,
-            system_message="""你是一位专业的参数提取专家，负责将用户输入的文本转换为JSON格式的参数。用户的输入中可能包含
+            system_message="""你是一位专业的参数提取专家，用户的输入中可能包含
                 1. JIRA账号信息 - 用户名
                 2. JIRA密码 - 用户密码
-            请提取出上述信息，并以JSON格式返回。
-            输出json格式：
+            请提取出上述信息，并以JSON格式返回，如果没有对应的账号密码信息，请提示用户重新输入。
+
+            提取失败的格式如下：
+            请输入你的**JIRA账号信息**（格式如下）：
+            **用户名**: `your_jira_username`
+            **密码**: `your_jira_password`
+
+            提取成功输出json格式为：
             {
-                "username": "jira_username",
-                "password": "jira_password"
+                "username": "xxx",
+                "password": "xxx"
             }
             """,
         )
 
         messages = [TextMessage(content=text, source="user")]
         chat_res = await params_agent.on_messages(messages, CancellationToken())
+        logger.info(f"参数提取智能体响应: {chat_res}")
         return self._extract_last_response(chat_res)
 
-    def _extract_last_response(self, chat_res: List[TextMessage]): # Adjusted type hint
+    def _extract_last_response(self, chat_res: Response): # Adjusted type hint
         """
         提取最后一个消息的响应
         """
-        if not chat_res:
-            return None
-        last_message = chat_res[-1]
+        last_message = chat_res.chat_message
+        logger.info(f"最后一个消息: {last_message}")
         # Ensure last_message is TextMessage and has content
         if isinstance(last_message, TextMessage) and hasattr(last_message, 'content') and last_message.content:
             try:
@@ -101,9 +108,7 @@ class JiraBatchAgent:
         # 初始化大语言模型客户端
         self.model_client = get_openai_client()
         # 封装账号提取智能体
-        self.account_agent = JiraAccountAgent(
-            llm_param_extractor=None # Simplified: JiraAccountAgent.handle_agent_params is not directly used by JiraBatchAgent
-        )
+        self.account_agent = JiraAccountAgent()
 
         # 创建需求分析智能体 - 负责将需求转化为结构化的提单
         self.ticket_clarification_agent = AssistantAgent(
@@ -210,30 +215,30 @@ class JiraBatchAgent:
             termination_condition=self.termination_condition,
         )
 
-    async def process(self, input: {"text": str, "sender_id": str, "conversation_id": str}) -> dict:
+    async def process(self, input: {"text": str, "sender_id": list, "conversation_id": str}) -> str:
         logger.info(f"开始为用户 {input.get('sender_id')} 处理Jira批量代理请求: {input.get('text')[:100]}...")
         text = input.get("text")
-        user_id = input.get("sender_id")
+        user_list = input.get("sender_id")
 
         # 1. 账号信息智能体优先处理
-        account_result = await self.account_agent.extract_and_save_account(user_id, text)
+        account_result = await self.account_agent.extract_and_save_account(user_list, text)
         if account_result:  # 有提示语，说明账号未补全或刚保存成功让用户重试，直接返回提示
-            logger.info(f"用户 {user_id} 账号处理结果: {account_result}")
-            return {"content": account_result}
+            logger.info(f"用户 {user_list} 账号处理结果: {account_result}")
+            return account_result
 
         # 2. 账号已齐全，进入提单分析主流程
-        logger.info(f"用户 {user_id} 账号已存在或已处理，开始解析提单内容...")
+        logger.info(f"用户 {user_list} 账号已存在或已处理，开始解析提单内容...")
         parsed_ticket_data_list = await self.process_message(text)
 
         if not parsed_ticket_data_list:
-            logger.warning(f"用户 {user_id} 的输入未能通过AI解析出任何有效的工单信息。原始输入: {text}")
-            return {"content": "抱歉，我未能从您的输入中准确解析出需要创建的工单信息。请尝试调整您的描述或检查格式。"}
+            logger.warning(f"用户 {user_list} 的输入未能通过AI解析出任何有效的工单信息。原始输入: {text}")
+            return "抱歉，我未能从您的输入中准确解析出需要创建的工单信息。请尝试调整您的描述或检查格式。"
 
         # 3. 获取Jira执行凭据 (用户名和密码从数据库获取)
         user_jira_account = get_jira_account(user_id)
         if not user_jira_account or not user_jira_account.get('username') or not user_jira_account.get('password'):
             logger.error(f"用户 {user_id} 在数据库中未找到有效的Jira账号凭据。")
-            return {"content": "错误：未能获取到您已保存的Jira账号信息，请确认您已正确设置Jira账号。"}
+            return "错误：未能获取到您已保存的Jira账号信息，请确认您已正确设置Jira账号。"
 
         jira_user = user_jira_account['username']
         jira_password = user_jira_account['password']
@@ -259,10 +264,10 @@ class JiraBatchAgent:
             markdown_report = ticket_creator.format_results_to_markdown(creation_results)
 
             logger.info(f"用户 {user_id} 的批量工单创建流程处理完毕，已生成Markdown报告。")
-            return {"content": markdown_report}
+            return markdown_report
         except Exception as e:
             logger.error(f"为用户 {user_id} 执行批量创建Jira工单或生成报告时发生意外错误: {e}", exc_info=True)
-            return {"content": f"抱歉，处理您的批量工单请求时遇到了内部错误。请稍后重试或联系技术支持。错误参考: {e}"}
+            return f"抱歉，处理您的批量工单请求时遇到了内部错误。请稍后重试或联系技术支持。错误参考: {e}"
         finally:
             if ticket_creator and ticket_creator.client:
                 await ticket_creator.client.aclose() # 确保客户端总是被关闭

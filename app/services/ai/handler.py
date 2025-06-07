@@ -9,18 +9,19 @@ import os
 import asyncio
 from typing import Optional, Dict, Any, List
 
+from autogen_agentchat.base import Response
 from autogen_core.models import ModelFamily
 from loguru import logger
 
 # 导入最新的AutoGen v0.5 AgentChat API
 from autogen_agentchat.agents import AssistantAgent, UserProxyAgent
 from autogen_agentchat.messages import TextMessage
-from .openai_client import get_openai_client
 from autogen_core import CancellationToken
 
 from app.core.config import settings
 from app.services.knowledge.retriever import KnowledgeRetriever
 from app.services.ai.jira_batch_agent import JiraBatchAgent
+from app.services.ai.openai_client import get_openai_client
 
 
 class AIMessageHandler:
@@ -168,7 +169,7 @@ class AIMessageHandler:
         # TODO: 实现意图识别逻辑
         pass
 
-    def _extract_last_response(self, chat_result) -> str:
+    def _extract_last_response(self, chat_result: Response) -> str:
         """从聊天结果中提取最后一个回复"""
         try:
             # AutoGen v0.5+ 中，响应是 Response 对象，其中包含 chat_message 属性
