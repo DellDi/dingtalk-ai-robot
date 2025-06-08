@@ -2,194 +2,193 @@
 # -*- coding: utf-8 -*-
 
 """
-AI消息处理器模块，使用AutoGen多智能体实现智能问答
+AI消息处理器模块，使用AutoGen SelectorGroupChat多智能体实现智能问答和意图识别
 """
 
 import os
 import asyncio
-from typing import Optional, Dict, Any, List
-
-from autogen_agentchat.base import Response
-from autogen_core.models import ModelFamily
 from loguru import logger
+from typing import Optional, Dict, Any, List, Union
 
-# 导入最新的AutoGen v0.5 AgentChat API
+from autogen_agentchat.conditions import MaxMessageTermination, TextMentionTermination
 from autogen_agentchat.agents import AssistantAgent, UserProxyAgent
-from autogen_agentchat.messages import TextMessage
-from autogen_core import CancellationToken
+from autogen_agentchat.teams import SelectorGroupChat
+from autogen_agentchat.ui import Console
+TextMentionTermination
 
 from app.core.config import settings
 from app.services.knowledge.retriever import KnowledgeRetriever
 from app.services.ai.jira_batch_agent import JiraBatchAgent
 from app.services.ai.openai_client import get_openai_client
 
+# --- Selector Prompt --- #
+SELECTOR_PROMPT_ZH = """你是一个智能路由选择器。根据用户的最新请求内容，从以下可用智能体中选择最合适的一个来处理该请求。
+请仔细阅读智能体的描述，确保选择最相关的智能体。
+
+可用智能体 (格式: <名称> : <描述>):
+{roles}
+
+对话历史 (最近几条):
+{history}
+
+请仔细阅读最新的用户请求，并仅选择一个最能胜任该任务的智能体名称。不要添加任何解释或额外文字，只需给出智能体名称。
+选择的智能体:"""
+
 
 class AIMessageHandler:
-    """AI消息处理器，基于AutoGen实现多智能体对话"""
+    """AI消息处理器，基于AutoGen SelectorGroupChat实现多智能体对话和意图识别"""
 
     def __init__(self):
         """初始化AI消息处理器"""
         self.knowledge_retriever = KnowledgeRetriever()
+        self.jira_batch_agent = JiraBatchAgent() # JIRA批处理实例
         self._setup_api_keys()
-        self._init_agents()
-        self.conversation_contexts: Dict[str, List[Dict[str, Any]]] = {}
-        # 初始化JIRA批处理智能体
-        self.jira_batch_agent = JiraBatchAgent()
-        self._register_intent_handlers()
+        self.model_client = get_openai_client(model_info={"json_output": False})
+        self._init_agents_and_groupchat()
+
+        self._current_sender_id: Optional[str] = None
+        self._current_conversation_id: Optional[str] = None
 
     def _setup_api_keys(self):
         """设置API密钥"""
         if settings.OPENAI_API_KEY:
             os.environ["OPENAI_API_KEY"] = settings.OPENAI_API_KEY
-            self.is_azure = False
+        elif settings.AZURE_OPENAI_API_KEY and settings.AZURE_OPENAI_API_BASE: # Check for Azure keys
+            logger.info("Azure OpenAI API key found, assuming environment variables are set for AutoGen.")
         else:
-            logger.warning("未配置任何LLM API密钥，将无法使用AI功能")
-            self.is_azure = False
+            logger.warning("未配置任何LLM API密钥，AI功能可能受限或无法使用")
 
-    def _init_agents(self):
-        """初始化智能体"""
-        model_client = get_openai_client(model_info={"json_output": False})
+    async def _search_knowledge_base_tool(self, query: str) -> str:
+        """工具函数：用于知识库检索"""
+        logger.info(f"工具: _search_knowledge_base_tool 调用，查询: {query}")
+        results = await self.knowledge_retriever.search(query)
+        return str(results) if results else "未在知识库中找到相关信息。"
 
-        # 创建基础助手智能体
-        self.assistant = AssistantAgent(
-            name="dingtalk",
-            system_message="""你是一个专业的钉钉机器人助手，可以：
-1. 回答用户的各种问题
-2. 从知识库中检索相关信息
-3. 帮助用户创建JIRA工单
-4. 管理服务器和执行维护任务
+    async def _process_jira_request_tool(self, request_text: str) -> str:
+        """工具函数：用于处理JIRA请求"""
+        logger.info(f"工具: _process_jira_request_tool 调用，请求文本: {request_text}")
 
-请使用简洁、专业、友好的语气回答，尽量提供有价值的信息。
-如果需要执行特定任务，请明确告知用户你将如何处理。
-""",
-            model_client=model_client,
+        message_payload = {
+            "text": request_text,
+            "sender_id": self._current_sender_id or "unknown_sender",
+            "conversation_id": self._current_conversation_id or "unknown_conversation"
+        }
+        response_data = await self.jira_batch_agent.process(message_payload)
+
+        if isinstance(response_data, dict) and "content" in response_data:
+            return str(response_data["content"])
+        elif isinstance(response_data, str):
+            return response_data
+
+        logger.warning(f"JiraBatchAgent (通过工具) 返回了非标准格式: {response_data}")
+        return "JIRA任务已提交处理，但响应格式无法直接转换为文本。"
+
+    def _init_agents_and_groupchat(self):
+        """初始化智能体和 SelectorGroupChat"""
+
+        # self.user_proxy = UserProxyAgent(
+        #     name="UserProxy",
+        #     description="一个代理，可以执行代码和调用提供的工具函数，例如知识库搜索或JIRA操作。",
+        # )
+
+        self.indent_agent = AssistantAgent(
+            "PlanningAgent",
+            description="一个意图识别智能体，负责识别用户意图并选择合适的智能体处理。",
+            model_client=self.model_client,
+            system_message="""
+            你是一个意图识别智能体，负责识别用户意图并选择合适的智能体处理。
+            你的团队成员包括：
+                KnowledgeExpert: 知识库专家
+                ServerAdmin: 服务器管理专家
+                JiraSpecialist: JIRA任务专家
+                GeneralAssistant: 通用助手
+
+            你只识别用户意图并选择合适的智能体，不亲自执行。
+
+            当识别出用户意图后，请使用以下格式：
+            1. <agent> : <task>
+
+            当识别出用户意图后，请总结发现并以 "TERMINATE" 结束你的回复。
+            """,
         )
 
-        # 创建用户代理
-        self.user_proxy = UserProxyAgent(name="user")  # 不需要人类输入
-
-        # 创建知识库专家智能体
-        self.knowledge_agent = AssistantAgent(
-            name="knowledge",
-            system_message="""你是一个专业的知识库专家，负责从企业知识库中检索信息并提供准确的回答。
-当用户询问相关知识时，你会分析问题，并从知识库中找出最相关的信息。
-请确保你的回答是基于事实的，并引用信息来源。
-""",
-            model_client=model_client,
+        self.knowledge_expert_agent = AssistantAgent(
+            name="KnowledgeExpert",
+            system_message="你是一个知识库专家。如果用户的问题需要从知识库中查找答案，请调用`search_knowledge_base`工具，并使用用户原始提问作为查询参数。根据工具返回的结果回答用户。如果工具未返回有效信息，请告知用户知识库中没有相关内容。回答完毕后，请以'TERMINATE'结束你的回复。",
+            description="知识库专家：当用户提问公司产品、文档、政策或历史数据等需要查阅内部资料的问题时，选择我。我会使用知识库工具查找答案。",
+            model_client=self.model_client,
         )
 
-        # 创建服务器管理专家智能体
-        self.server_agent = AssistantAgent(
-            name="server",
-            system_message="""你是一个服务器管理专家，负责：
-1. 远程服务器操作和维护
-2. Dify服务升级和管理
-3. 服务器日志分析和问题诊断
-
-当执行服务器操作时，请确保安全第一，并详细记录执行步骤和结果。
-""",
-            model_client=model_client,
+        self.server_admin_agent = AssistantAgent(
+            name="ServerAdmin",
+            system_message="你是一个服务器管理专家。负责回答关于服务器操作、Dify服务管理、SSH连接、日志分析等问题。请提供建议和信息，不要实际执行任何服务器命令。回答完毕后，请以'TERMINATE'结束你的回复。",
+            description="服务器管理专家：当用户咨询服务器维护、Dify平台管理、SSH操作或日志分析等技术问题时，选择我。",
+            model_client=self.model_client,
         )
 
-    def _register_intent_handlers(self):
-        """注册意图处理器"""
-        self.intent_handlers = {"jira": self._handle_jira_intent}  # JIRA类型绑定批处理器
+        self.jira_specialist_agent = AssistantAgent(
+            name="JiraSpecialist",
+            system_message="你是一个JIRA任务专家。如果用户想要创建、查询或更新JIRA工单/任务，请调用`process_jira_task`工具，并将用户的完整原始请求作为参数。根据工具返回的结果回复用户。回答完毕后，请以'TERMINATE'结束你的回复。",
+            description="JIRA任务专家：当用户的请求明确涉及JIRA、创建工单、查询任务状态或项目跟踪时，选择我。我会使用JIRA工具处理请求。",
+            model_client=self.model_client,
+        )
 
-    async def _handle_jira_intent(self, message: dict) -> dict:
-        """处理JIRA类型请求"""
-        return await self.jira_batch_agent.process(message["text"])
+        self.general_assistant_agent = AssistantAgent(
+            name="GeneralAssistant",
+            system_message="你是一个通用的AI助手。负责回答其他专业智能体无法处理的各类问题，或进行闲聊。回答完毕后，请以'TERMINATE'结束你的回复。",
+            description="通用助手：对于日常对话、一般性问题或其他专家无法处理的请求，选择我。",
+            model_client=self.model_client,
+        )
+
+        selectable_agents = [
+            self.indent_agent,
+            self.knowledge_expert_agent,
+            self.server_admin_agent,
+            self.jira_specialist_agent,
+            self.general_assistant_agent,
+        ]
+
+        text_mention_termination = TextMentionTermination("TERMINATE")
+        max_messages_termination = MaxMessageTermination(max_messages=25)
+
+        self.groupchat = SelectorGroupChat(
+            participants=selectable_agents,
+            selector_prompt=SELECTOR_PROMPT_ZH,
+            model_client=self.model_client,
+            allow_repeated_speaker=True,
+            termination_condition=text_mention_termination | max_messages_termination,
+        )
 
     async def process_message(
         self, text: str, sender_id: str, conversation_id: str
     ) -> Optional[str]:
-        """处理消息入口"""
-        # 意图识别
-        intent = self._detect_intent(text)
+        """使用SelectorGroupChat处理传入的消息"""
+        logger.info(f"AIMessageHandler 收到消息 from {sender_id}: {text}")
+        self._current_sender_id = sender_id
+        self._current_conversation_id = conversation_id
 
-        # 优先使用注册的意图处理器
-        if intent in self.intent_handlers:
-            return await self.intent_handlers[intent]({"text": text, "sender_id": sender_id})
+        final_reply = "抱歉，处理您的请求时出现了问题，未能获取明确回复。"
 
-        # 默认智能体处理流程
         try:
-            logger.info(f"处理来自 {sender_id} 的消息: {text}")
+            team = self.groupchat
 
-            # 判断消息类型和智能体选择
-            if "知识" in text or "查询" in text or "资料" in text:
-                # 使用知识库检索信息
-                knowledge_results = await self.knowledge_retriever.search(text)
+            result = await Console(team.run_stream(task=text))
 
-                # 构建上下文增强的消息
-                context_message = f"以下是从知识库检索到的信息:\n{knowledge_results}\n\n基于上述信息，请回答用户问题: {text}"
+            logger.info(f"SelectorGroupChat 处理结果: {result}")
 
-                # 使用知识库专家智能体
-                # 注意：v0.5+ API使用on_messages方法
-                # 创建消息列表
-                messages = [TextMessage(content=context_message, source=self.user_proxy.name)]
-                # 发送消息并获取响应
-                chat_res = await self.knowledge_agent.on_messages(messages, CancellationToken())
+            if final_reply and "TERMINATE" in final_reply:
+                final_reply = final_reply.replace("TERMINATE", "").strip()
 
-                return self._extract_last_response(chat_res)
-
-            elif "jira" in text.lower() or "工单" in text or "任务" in text:
-                # 直接交给批量JIRA智能体（已内置账号处理）
-                return await self.jira_batch_agent.process(
-                    {"text": text, "sender_id": sender_id, "conversation_id": conversation_id}
-                )
-
-            elif (
-                "服务器" in text
-                or "升级" in text
-                or "dify" in text.lower()
-                or "ssh" in text.lower()
-            ):
-                # 使用服务器专家智能体
-                # 创建消息列表
-                messages = [TextMessage(content=text, source=self.user_proxy.name)]
-                # 发送消息并获取响应
-                chat_res = await self.server_agent.on_messages(messages, CancellationToken())
-
-                return self._extract_last_response(chat_res)
-
-            else:
-                # 默认使用通用助手智能体
-                # 创建消息列表
-                messages = [TextMessage(content=text, source=self.user_proxy.name)]
-                # 发送消息并获取响应
-                chat_res = await self.assistant.on_messages(messages, CancellationToken())
-
-                return self._extract_last_response(chat_res)
+            if not final_reply or final_reply.lower() == "none":
+                final_reply = "已处理您的请求，但未生成明确的文本回复。"
 
         except Exception as e:
-            logger.error(f"处理消息异常: {e}")
-            return "抱歉，处理您的请求时出现了问题，请稍后再试。"
+            logger.error(f"处理消息时发生异常: {e}", exc_info=True)
+            final_reply = f"抱歉，处理您的请求时发生错误: {e}"
 
-    def _detect_intent(self, text: str) -> str:
-        """意图识别"""
-        # TODO: 实现意图识别逻辑
-        pass
+        finally:
+            self._current_sender_id = None
+            self._current_conversation_id = None
 
-    def _extract_last_response(self, chat_result: Response) -> str:
-        """从聊天结果中提取最后一个回复"""
-        try:
-            # AutoGen v0.5+ 中，响应是 Response 对象，其中包含 chat_message 属性
-            # chat_message 是一个消息对象，包含 content 属性
-            if hasattr(chat_result, "chat_message") and hasattr(
-                chat_result.chat_message, "content"
-            ):
-                return chat_result.chat_message.content
-
-            # 兼容旧版API，如果还有chat_history结构
-            if hasattr(chat_result, "chat_history") and chat_result.chat_history:
-                # 获取助手的最后一条消息
-                for message in reversed(chat_result.chat_history):
-                    if hasattr(message, "role") and message.role == "assistant":
-                        return message.content
-                    elif hasattr(message, "source") and message.source.endswith("agent"):
-                        return message.content
-
-            logger.warning(f"无法解析聊天结果：{chat_result}")
-            return "抱歉，无法获取有效回复。"
-        except Exception as e:
-            logger.error(f"提取回复异常: {e}")
-            return "抱歉，处理回复时出现了问题。"
+        logger.info(f"AIMessageHandler 回复: {final_reply}")
+        return final_reply
