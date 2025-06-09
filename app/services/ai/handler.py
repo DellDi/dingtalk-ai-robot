@@ -7,12 +7,14 @@ AI消息处理器模块，使用AutoGen SelectorGroupChat多智能体实现智�
 
 import os
 import asyncio
+from autogen_agentchat.base import TaskResult
 from loguru import logger
 from typing import Optional, Dict, Any, List, Union
 
 from autogen_agentchat.conditions import MaxMessageTermination, TextMentionTermination
 from autogen_agentchat.agents import AssistantAgent, UserProxyAgent
 from autogen_agentchat.teams import SelectorGroupChat
+from autogen_agentchat.messages import TextMessage
 from autogen_agentchat.ui import Console
 TextMentionTermination
 
@@ -101,10 +103,13 @@ class AIMessageHandler:
                 KnowledgeExpert: 知识库专家
                 ServerAdmin: 服务器管理专家
                 JiraSpecialist: JIRA任务专家
-                GeneralAssistant: 通用助手
+                GeneralAssistant: 通用助手-日常问题
 
             你只识别用户意图并选择合适的智能体，不亲自执行。
 
+            补充团队成员命中关键词拓展：
+            KnowledgeExpert: 命中关键词拓展：1. 你是谁？2. 曾迪是谁？
+            
             当识别出用户意图后，请使用以下格式：
             1. <agent> : <task>
 
@@ -128,15 +133,42 @@ class AIMessageHandler:
 
         self.jira_specialist_agent = AssistantAgent(
             name="JiraSpecialist",
-            system_message="你是一个JIRA任务专家。如果用户想要创建、查询或更新JIRA工单/任务，请调用`process_jira_task`工具，并将用户的完整原始请求作为参数。根据工具返回的结果回复用户。回答完毕后，请以'TERMINATE'结束你的回复。",
+            system_message="""
+            你是一个JIRA任务专家。如果用户想要创建JIRA工单/任务，请调用`process_jira_task`工具，并将用户的完整原始请求作为参数。根据工具返回的结果回复用户。回答完毕后，请以'TERMINATE'结束你的回复。
+            """,
             description="JIRA任务专家：当用户的请求明确涉及JIRA、创建工单、查询任务状态或项目跟踪时，选择我。我会使用JIRA工具处理请求。",
             model_client=self.model_client,
         )
 
         self.general_assistant_agent = AssistantAgent(
             name="GeneralAssistant",
-            system_message="你是一个通用的AI助手。负责回答其他专业智能体无法处理的各类问题，或进行闲聊。回答完毕后，请以'TERMINATE'结束你的回复。",
-            description="通用助手：对于日常对话、一般性问题或其他专家无法处理的请求，选择我。",
+            system_message="""
+            你是一个通用的AI助手。负责回答引导用户，或进行闲聊。
+            你可以告诉用户你会什么技能包括：
+            1. 服务器管理
+            ```
+             dify服务重启
+             dify服务自动化升级
+             系统运行状态查询
+            ```
+            2. 数据技术知识查询
+            3. JIRA需求提单：告诉用户提单格式要求：
+            ```
+                配置jira信息
+                **用户名**: `your_jira_username`
+                **密码**: `your_jira_password` 
+                
+            ```
+            格式要求：
+            ```
+            1. 需求描述中最好包含客户名称
+            2. 不限制内容，但要确保信息基本可用
+            3. 可以要求批量提单，提单多少个数等等
+            ```
+            
+            回答完毕后，请以'TERMINATE'结束你的回复。
+            """,
+            description="通用助手：对于日常对话、一般性问题选择我。",
             model_client=self.model_client,
         )
 
@@ -172,15 +204,59 @@ class AIMessageHandler:
         try:
             team = self.groupchat
 
-            result = await Console(team.run_stream(task=text))
+            # result = await Console(team.run_stream(task=text))
 
-            logger.info(f"SelectorGroupChat 处理结果: {result}")
+            # result = await team.run(task=text)
 
-            if final_reply and "TERMINATE" in final_reply:
-                final_reply = final_reply.replace("TERMINATE", "").strip()
+            result = TaskResult(messages=[])
 
-            if not final_reply or final_reply.lower() == "none":
-                final_reply = "已处理您的请求，但未生成明确的文本回复。"
+            async for message in team.run_stream(task=text):
+                result.messages.append(message)
+
+            if not result or not hasattr(result, "messages") or not result.messages:
+                logger.error("SelectorGroupChat: 团队处理失败或未返回任何消息。")
+                return "抱歉，处理您的请求时出现了问题，未能获取明确回复。"
+
+            # result.messages[-1] 被理解为一个容器对象
+            # 这个容器对象的字符串表示形式与INFO日志中的 "messages=[...] stop_reason=..." 相符
+            final_reply_container = result.messages[-1]
+
+            # 记录一下这个容器对象，以便调试确认
+            logger.info(f"SelectorGroupChat 最终回复容器对象: {final_reply_container}")
+
+            actual_final_message = None
+            # 从容器中提取真正的最后一条消息
+            if hasattr(final_reply_container, 'messages') and isinstance(final_reply_container, TaskResult) and final_reply_container.messages:
+                actual_final_message = final_reply_container.messages[-1]
+                logger.info(f"SelectorGroupChat 从容器提取的实际最终消息: {actual_final_message}")
+            else:
+                # 如果容器结构不符合预期，或者没有消息，则记录错误
+                logger.error(
+                    f"SelectorGroupChat: 最终回复容器对象结构不符合预期或其消息列表为空. 类型: {type(final_reply_container)}"
+                )
+                return "抱歉，处理您的请求时出现了问题，未能获取最终回复。"
+
+            # 现在，actual_final_message 应该是我们期望的 TextMessage 对象
+            # 对它进行验证
+            if (
+                not isinstance(actual_final_message, TextMessage)
+                or not actual_final_message.content
+            ):
+                logger.error(
+                    f"SelectorGroupChat: 提取的实际最终消息无效或为空. "
+                    f"类型: {type(actual_final_message)}, 内容: {getattr(actual_final_message, 'content', 'N/A')}"
+                )
+                return "抱歉，处理您的请求时出现了问题，未能获取明确回复。"
+
+            # 使用提取出来的实际消息内容
+            final_reply_content = actual_final_message.content
+            if final_reply_content and "TERMINATE" in final_reply_content:
+                final_reply_content = final_reply_content.replace("TERMINATE", "").strip()
+
+            if not final_reply_content or final_reply_content.lower() == "none":
+                final_reply_content = "已处理您的请求，但未生成明确的文本回复。"
+
+            return final_reply_content
 
         except Exception as e:
             logger.error(f"处理消息时发生异常: {e}", exc_info=True)

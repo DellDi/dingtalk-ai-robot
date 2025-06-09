@@ -46,7 +46,6 @@ def get_openai_client(**overrides) -> OpenAIChatCompletionClient:
         client = get_openai_client(api_key="xxx", model="gpt-4o")
     """
     config = deep_merge_dicts(_DEFAULT_CONFIG.copy(), overrides)
-    logger.info(f"OpenAIClient 配置: {config}")
     # 过滤掉 None 的参数，防止传递无效参数
     valid_config = {k: v for k, v in config.items() if v is not None}
     return OpenAIChatCompletionClient(**valid_config)
