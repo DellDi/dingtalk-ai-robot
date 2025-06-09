@@ -41,7 +41,7 @@ class JiraAccountAgent:
             username, password = user_info["username"], user_info["password"]
             save_jira_account(user_id, username, password)
             return "账号保存成功，请重新输入提单内容。"
-        return "请输入你的**JIRA账号信息**（格式如下）：配置jira信息\n**用户名**: `your_jira_username`\n**密码**: `your_jira_password`"
+        return "请输入你的**JIRA账号信息**（格式如下）：\n **配置jira信息**\n**用户名**: `your_jira_username`\n**密码**: `your_jira_password`"
 
     async def handle_agent_params(self, text: str) -> Optional[Dict[str, Any]]:
         """
@@ -219,6 +219,7 @@ class JiraBatchAgent:
         logger.info(f"开始为用户 {input.get('sender_id')} 处理Jira批量代理请求: {input.get('text')[:100]}...")
         text = input.get("text")
         user_list = input.get("sender_id")
+        user_id = user_list[0]
 
         # 1. 账号信息智能体优先处理
         account_result = await self.account_agent.extract_and_save_account(user_list, text)
@@ -234,14 +235,14 @@ class JiraBatchAgent:
             logger.warning(f"用户 {user_list} 的输入未能通过AI解析出任何有效的工单信息。原始输入: {text}")
             return "抱歉，我未能从您的输入中准确解析出需要创建的工单信息。请尝试调整您的描述或检查格式。"
 
-        # 3. 获取Jira执行凭据 (用户名和密码从数据库获取)
+        # 3. 获取Jira执行凭据 (用户名和密码从数据库获取) (variable) user_jira_account: Tuple[str, str] | None
+
         user_jira_account = get_jira_account(user_id)
-        if not user_jira_account or not user_jira_account.get('username') or not user_jira_account.get('password'):
+        jira_user, jira_password = user_jira_account
+
+        if not user_jira_account or not jira_user or not jira_password:
             logger.error(f"用户 {user_id} 在数据库中未找到有效的Jira账号凭据。")
             return "错误：未能获取到您已保存的Jira账号信息，请确认您已正确设置Jira账号。"
-
-        jira_user = user_jira_account['username']
-        jira_password = user_jira_account['password']
 
         # 4. 设置批量创建所需的固定参数
         assignee = jira_user  # 经办人与Jira用户名一致
@@ -272,7 +273,6 @@ class JiraBatchAgent:
             if ticket_creator and ticket_creator.client:
                 await ticket_creator.client.aclose() # 确保客户端总是被关闭
                 logger.info(f"用户 {user_id} 的JiraTicketCreator客户端已关闭。")
-
 
     def _extract_json_from_text(self, text: str) -> Optional[List[Dict[str, Any]]]:
         """尝试从文本中提取JSON数组。"""
@@ -308,14 +308,14 @@ class JiraBatchAgent:
                             return None # Or handle more gracefully
                     return jira_list
                 else: # pragma: no cover
-                    logger.warning(f"'jiraList' key found but its value is not a list: {type(jira_list)}")
+                    logger.warning(f"发现jiraList密钥，但其值不是一个列表： {type(jira_list)}")
                     return None
             elif isinstance(parsed_data, list): # pragma: no cover
                 # Fallback if the agent directly returns a list instead of {"jiraList": [...] }
-                logger.warning("JSON extracted is a list, but expected a dict with 'jiraList'. Attempting to use the list directly.")
+                logger.warning("解析的JSON提取是一个清单，但期望与“jiraList”的命令。试图直接使用列表。")
                 return parsed_data # This might happen if the LLM doesn't follow instructions perfectly
             else: # pragma: no cover
-                logger.warning(f"Parsed JSON is not a dict with 'jiraList' or a direct list: {text[:200]}...")
+                logger.warning(f"解析的JSON不是“jiraList”或直接列表的命令： {text[:200]}...")
                 return None
 
         except json.JSONDecodeError: # pragma: no cover

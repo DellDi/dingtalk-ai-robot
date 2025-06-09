@@ -23,19 +23,29 @@ from loguru import logger
 
 from app.core.config import settings
 from app.services.ai.handler import AIMessageHandler
+from app.services.knowledge.retriever import KnowledgeRetriever # 新增导入
+from autogen_core.memory.vector import ChromaDBVectorMemory # 新增导入
 
 
 class DingTalkClient:
     """钉钉客户端类，管理钉钉Stream连接和消息处理"""
 
-    def __init__(self):
+    def __init__(self, knowledge_retriever: Optional[KnowledgeRetriever] = None):
         """初始化钉钉客户端"""
         self.client_id = settings.DINGTALK_CLIENT_ID
         self.client_secret = settings.DINGTALK_CLIENT_SECRET
         self.robot_code = settings.DINGTALK_ROBOT_CODE
         self._token_cache = {"token": None, "expire": 0}
         self.stream_client = None
-        self.ai_handler = AIMessageHandler()
+        
+        shared_vector_memory: Optional[ChromaDBVectorMemory] = None
+        if knowledge_retriever and knowledge_retriever.initialized:
+            shared_vector_memory = knowledge_retriever.vector_memory
+            logger.info("DingTalkClient接收到共享的vector_memory")
+        else:
+            logger.warning("DingTalkClient未接收到有效的共享vector_memory，知识库功能可能受限")
+            
+        self.ai_handler = AIMessageHandler(vector_memory=shared_vector_memory)
 
         # 设置全局实例引用，便于其他模块访问
         global global_dingtalk_client

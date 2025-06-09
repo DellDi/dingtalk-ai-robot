@@ -16,10 +16,9 @@ from autogen_agentchat.agents import AssistantAgent, UserProxyAgent
 from autogen_agentchat.teams import SelectorGroupChat
 from autogen_agentchat.messages import TextMessage
 from autogen_agentchat.ui import Console
-TextMentionTermination
+from autogen_core.memory.vector import ChromaDBVectorMemory # Added import
 
 from app.core.config import settings
-from app.services.knowledge.retriever import KnowledgeRetriever
 from app.services.ai.jira_batch_agent import JiraBatchAgent
 from app.services.ai.openai_client import get_openai_client
 
@@ -40,9 +39,14 @@ SELECTOR_PROMPT_ZH = """你是一个智能路由选择器。根据用户的最�
 class AIMessageHandler:
     """AI消息处理器，基于AutoGen SelectorGroupChat实现多智能体对话和意图识别"""
 
-    def __init__(self):
+    def __init__(self, vector_memory: Optional[ChromaDBVectorMemory] = None):
         """初始化AI消息处理器"""
-        self.knowledge_retriever = KnowledgeRetriever()
+        self.shared_vector_memory = vector_memory
+        if self.shared_vector_memory:
+            logger.info("AIMessageHandler initialized with shared vector_memory.")
+        else:
+            logger.warning("AIMessageHandler initialized without shared vector_memory. Knowledge base functionality will be limited.")
+        
         self.jira_batch_agent = JiraBatchAgent() # JIRA批处理实例
         self._setup_api_keys()
         self.model_client = get_openai_client(model_info={"json_output": False})
@@ -60,11 +64,43 @@ class AIMessageHandler:
         else:
             logger.warning("未配置任何LLM API密钥，AI功能可能受限或无法使用")
 
-    async def _search_knowledge_base_tool(self, query: str) -> str:
-        """工具函数：用于知识库检索"""
+    async def _search_knowledge_base_tool(self, query: str, n_results: int = 3) -> str:
+        """工具函数：用于知识库检索，使用共享的vector_memory"""
         logger.info(f"工具: _search_knowledge_base_tool 调用，查询: {query}")
-        results = await self.knowledge_retriever.search(query)
-        return str(results) if results else "未在知识库中找到相关信息。"
+        if not self.shared_vector_memory:
+            logger.warning("_search_knowledge_base_tool: shared_vector_memory is not available.")
+            return "知识库未正确配置或初始化，无法执行搜索。"
+
+        try:
+            # ChromaDBVectorMemory.retrieve_docs is synchronous
+            retrieved_docs_dict = await asyncio.to_thread(
+                self.shared_vector_memory.retrieve_docs,
+                query_texts=[query],
+                n_results=n_results,
+                # include=["metadatas", "documents"] # Ensure documents are included if needed by processing
+            )
+            
+            # Process results (this part might need adjustment based on actual structure of retrieved_docs_dict)
+            # Assuming retrieved_docs_dict is like: {'ids': [['id1']], 'documents': [['doc1_content']], 'metadatas': [[{'source': 'src1'}]]}
+            # And we want to return a string representation of the documents
+            processed_results = []
+            if retrieved_docs_dict and retrieved_docs_dict.get("documents"):
+                # The result for a single query is the first element in the list of lists
+                docs_for_query = retrieved_docs_dict["documents"][0]
+                metadatas_for_query = retrieved_docs_dict.get("metadatas", [[]])[0]
+                
+                for i, doc_content in enumerate(docs_for_query):
+                    metadata_info = metadatas_for_query[i] if i < len(metadatas_for_query) else {}
+                    source = metadata_info.get("source", "未知来源")
+                    processed_results.append(f"来源: {source}\n内容: {doc_content}") 
+            
+            if not processed_results:
+                return "未在知识库中找到相关信息。"
+            
+            return "\n\n---\n\n".join(processed_results)
+        except Exception as e:
+            logger.error(f"Error during knowledge base search: {e}")
+            return f"知识库检索时发生错误: {e}"
 
     async def _process_jira_request_tool(self, request_text: str) -> str:
         """工具函数：用于处理JIRA请求"""
@@ -93,35 +129,37 @@ class AIMessageHandler:
         #     description="一个代理，可以执行代码和调用提供的工具函数，例如知识库搜索或JIRA操作。",
         # )
 
-        self.indent_agent = AssistantAgent(
-            "PlanningAgent",
-            description="一个意图识别智能体，负责识别用户意图并选择合适的智能体处理。",
-            model_client=self.model_client,
-            system_message="""
-            你是一个意图识别智能体，负责识别用户意图并选择合适的智能体处理。
-            你的团队成员包括：
-                KnowledgeExpert: 知识库专家
-                ServerAdmin: 服务器管理专家
-                JiraSpecialist: JIRA任务专家
-                GeneralAssistant: 通用助手-日常问题
+        # self.indent_agent = AssistantAgent(
+        #     "PlanningAgent",
+        #     description="一个意图识别智能体，负责识别用户意图并选择合适的智能体处理。",
+        #     model_client=self.model_client,
+        #     system_message="""
+        #     你是一个意图识别智能体，负责识别用户意图并选择合适的智能体处理。
+        #     你的团队成员包括：
+        #         KnowledgeExpert: 知识库专家
+        #         ServerAdmin: 服务器管理专家
+        #         JiraSpecialist: JIRA任务专家
+        #         GeneralAssistant: 通用助手-日常问题
 
-            你只识别用户意图并选择合适的智能体，不亲自执行。
+        #     你只识别用户意图并选择合适的智能体，不亲自执行。
 
-            补充团队成员命中关键词拓展：
-            KnowledgeExpert: 命中关键词拓展：1. 你是谁？2. 曾迪是谁？
-            
-            当识别出用户意图后，请使用以下格式：
-            1. <agent> : <task>
+        #     补充团队成员命中关键词拓展：
+        #     KnowledgeExpert: 命中关键词拓展：1. 你是谁？2. 曾迪是谁？
 
-            当识别出用户意图后，请总结发现并以 "TERMINATE" 结束你的回复。
-            """,
-        )
+        #     当识别出用户意图后，请使用以下格式：
+        #     1. <agent> : <task>
+
+        #     当识别出用户意图后，请总结发现并以 "TERMINATE" 结束你的回复。
+        #     """,
+        # )
 
         self.knowledge_expert_agent = AssistantAgent(
             name="KnowledgeExpert",
             system_message="你是一个知识库专家。如果用户的问题需要从知识库中查找答案，请调用`search_knowledge_base`工具，并使用用户原始提问作为查询参数。根据工具返回的结果回答用户。如果工具未返回有效信息，请告知用户知识库中没有相关内容。回答完毕后，请以'TERMINATE'结束你的回复。",
             description="知识库专家：当用户提问公司产品、文档、政策或历史数据等需要查阅内部资料的问题时，选择我。我会使用知识库工具查找答案。",
             model_client=self.model_client,
+            memory=self.shared_vector_memory, # Use shared vector memory
+            tools=[self._search_knowledge_base_tool], # Provide the tool
         )
 
         self.server_admin_agent = AssistantAgent(
@@ -134,9 +172,11 @@ class AIMessageHandler:
         self.jira_specialist_agent = AssistantAgent(
             name="JiraSpecialist",
             system_message="""
-            你是一个JIRA任务专家。如果用户想要创建JIRA工单/任务，请调用`process_jira_task`工具，并将用户的完整原始请求作为参数。根据工具返回的结果回复用户。回答完毕后，请以'TERMINATE'结束你的回复。
+            你是一个JIRA任务专家。如果用户想要创建JIRA工单/任务，请调用`_process_jira_request_tool`工具，并将用户的完整原始请求作为参数。根据工具返回的结果回复用户。
+            无论调用工具成功失败，你不能遗漏任何工具的信息，最后的回复始终以添加'TERMINATE'结束。
             """,
-            description="JIRA任务专家：当用户的请求明确涉及JIRA、创建工单、查询任务状态或项目跟踪时，选择我。我会使用JIRA工具处理请求。",
+            tools=[self._process_jira_request_tool],
+            description="JIRA任务专家：当用户的请求明确涉及JIRA、创建工单时，选择我。我会使用JIRA工具处理请求。",
             model_client=self.model_client,
         )
 
@@ -161,9 +201,9 @@ class AIMessageHandler:
             ```
             格式要求：
             ```
-            1. 需求描述中最好包含客户名称
+            1. 需求描述中最好包含客户名称的相关信息
             2. 不限制内容，但要确保信息基本可用
-            3. 可以要求批量提单，提单多少个数等等
+            3. 默认批量提单，如果不需要批量，请在描述中体现
             ```
             
             回答完毕后，请以'TERMINATE'结束你的回复。
@@ -173,7 +213,7 @@ class AIMessageHandler:
         )
 
         selectable_agents = [
-            self.indent_agent,
+            # self.indent_agent,
             self.knowledge_expert_agent,
             self.server_admin_agent,
             self.jira_specialist_agent,
@@ -222,7 +262,7 @@ class AIMessageHandler:
             final_reply_container = result.messages[-1]
 
             # 记录一下这个容器对象，以便调试确认
-            logger.info(f"SelectorGroupChat 最终回复容器对象: {final_reply_container}")
+            # logger.info(f"SelectorGroupChat 最终回复容器对象: {final_reply_container}")
 
             actual_final_message = None
             # 从容器中提取真正的最后一条消息

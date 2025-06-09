@@ -175,6 +175,136 @@ dingtalk-ai-robot/
 └── README.md               # 项目说明
 ```
 
+## 🧠 本地知识检索器 (`KnowledgeRetriever`)
+
+`KnowledgeRetriever` 服务提供了使用文本嵌入来构建和查询本地知识库的功能。它利用微软 AutoGen 的 `ChromaDBVectorMemory` 进行持久化向量存储，并使用自定义的 `TongyiQWenHttpEmbeddingFunction` 通过通义千问 V3 文本嵌入 API (HTTP端点) 生成嵌入。这种方法避免了对嵌入模型的直接SDK依赖。
+
+### ✨ 特性
+
+-   **异步操作**: 完全异步的设计，用于初始化、文档添加、搜索和资源清理，适用于AutoGen多智能体系统。
+-   **自定义通义千问嵌入**: 使用 `aiohttp` 直接调用通义千问嵌入API，确保了嵌入生成的灵活性并最小化外部依赖。
+-   **持久化向量存储**: 使用 `ChromaDBVectorMemory` 进行持久化存储，允许知识库在不同会话间保存和加载。
+-   **可配置性**: 关键参数（如API密钥、模型名称、API端点和数据库路径）通过 `app.core.config.settings` 和环境变量进行管理。
+-   **嵌入一致性**: 确保在索引文档和查询时使用相同的嵌入模型，这对于检索准确性至关重要。
+-   **批量嵌入效率**: 利用通义千问API的批量嵌入能力，提高处理多个文档时的性能。
+
+### 🛠️ 配置
+
+`KnowledgeRetriever` 依赖以下配置 (通常通过环境变量或由 `pydantic-settings` 加载的 `.env` 文件进行配置):
+
+-   `TONGYI_API_KEY`: 你的通义千问API密钥。
+-   `TONGYI_EMBEDDING_MODEL_NAME`: 要使用的特定通义嵌入模型 (例如，`text-embedding-v4`)。默认为 `"text-embedding-v4"`。
+-   `TONGYI_EMBEDDING_API_ENDPOINT`: 通义嵌入API的HTTP端点。默认为 `"https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings"`。
+-   `VECTOR_DB_PATH`: ChromaDB持久化其数据的本地文件系统路径。默认为 `"./.chroma_test_db"` (如示例中使用，可以配置)。
+
+### 🏗️ Architecture and Data Flow
+
+```mermaid
+graph TD
+    A[USER/Application] --> KR{KnowledgeRetriever};
+
+    subgraph KnowledgeRetriever [KnowledgeRetriever Service]
+        direction LR
+        KR_Init[initialize()] --> EF{TongyiQWenHttpEmbeddingFunction};
+        KR_Init --> VM{ChromaDBVectorMemory};
+        EF -.-> HTTP_API[Tongyi QWen HTTP API];
+        EF --> AIOHTTP[aiohttp.ClientSession];
+        VM -.-> DB[ChromaDB Persistent Storage];
+    end
+    
+    Settings[app.core.config.settings] -.-> KR_Init;
+    Settings -.-> EF;
+
+    A -- Add Documents (List<Dict>) --> KR_Add[add_documents()];
+    KR_Add -- Texts to Embed --> EF;
+    EF -- Embeddings --> KR_Add;
+    KR_Add -- MemoryContent to Add --> VM;
+    
+    A -- Search(query_text) --> KR_Search[search()];
+    KR_Search -- Query to Embed --> EF;
+    EF -- Query Embedding --> KR_Search;
+    KR_Search -- Embedded Query --> VM;
+    VM -- MemoryQueryResult --> KR_Search;
+    KR_Search -- Formatted Results (List<Dict>) --> A;
+
+    A -- Close --> KR_Close[close()];
+    KR_Close --> EF_Close[EF.close_session()];
+    EF_Close --> AIOHTTP;
+    KR_Close --> VM_Close[VM.close()];
+
+    style A fill:#f9f,stroke:#333,stroke-width:2px
+    style KR fill:#bbf,stroke:#333,stroke-width:2px
+    style HTTP_API fill:#ff9,stroke:#333,stroke-width:2px
+    style DB fill:#9cf,stroke:#333,stroke-width:2px
+    style Settings fill:#lightgrey,stroke:#333,stroke-width:2px
+```
+
+### 📦 Dependencies
+
+-   `autogen-core`
+-   `autogen-extensions` (specifically for `ChromaDBVectorMemory`)
+-   `chromadb`
+-   `aiohttp` (newly added for HTTP calls to Tongyi API)
+-   `loguru`
+-   `pydantic`
+
+### 🚀 Example Usage
+
+(Adapted from `app/services/knowledge/retriever.py`)
+
+```python
+import asyncio
+from app.services.knowledge.retriever import KnowledgeRetriever
+from app.core.config import settings # Ensure settings are loaded
+
+async def main():
+    # Ensure TONGYI_API_KEY is set in your environment or .env file
+    if not settings.TONGYI_API_KEY:
+        print("示例用法中止：请配置通义千问API密钥。")
+        return
+
+    retriever = KnowledgeRetriever(
+        collection_name="my_knowledge_base",
+        persistence_path="./.my_chroma_db", # Example path
+        tongyi_api_key=settings.TONGYI_API_KEY,
+        tongyi_api_endpoint=settings.TONGYI_EMBEDDING_API_ENDPOINT,
+        embedding_model_name=settings.TONGYI_EMBEDDING_MODEL_NAME
+    )
+
+    try:
+        await retriever.initialize()
+        print("KnowledgeRetriever initialized.")
+
+        documents_to_add = [
+            {"content": "AutoGen is a framework for building multi-agent applications.", "metadata": {"source": "doc1"}},
+            {"content": "ChromaDB is a vector store used for similarity search.", "metadata": {"source": "doc2"}},
+            {"content": "The Tongyi QWen API provides powerful text embedding models.", "metadata": {"source": "doc3"}},
+        ]
+        await retriever.add_documents(documents_to_add)
+        print(f"Added {len(documents_to_add)} documents.")
+
+        query1 = "What is AutoGen?"
+        results1 = await retriever.search(query1)
+        print(f"Search results for '{query1}':")
+        for res in results1:
+            print(f"  Content: {res['content']}, Metadata: {res['metadata']}")
+
+        query2 = "Tell me about vector databases."
+        results2 = await retriever.search(query2)
+        print(f"Search results for '{query2}':")
+        for res in results2:
+            print(f"  Content: {res['content']}, Metadata: {res['metadata']}")
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+    finally:
+        await retriever.close()
+        print("KnowledgeRetriever closed.")
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
 ## 📋 开发计划
 
 - [ ] 机器人AI智能问答和回复

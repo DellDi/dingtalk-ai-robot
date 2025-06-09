@@ -6,14 +6,23 @@
 """
 
 from typing import Dict, Any, List, Optional
+import json
 
-from fastapi import APIRouter, Body, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, File, Form, UploadFile # Request, Depends 新增
 from pydantic import BaseModel, Field
+from loguru import logger
 
 from app.services.knowledge.retriever import KnowledgeRetriever
 
 router = APIRouter()
 
+# 依赖项函数
+async def get_knowledge_retriever(request: Request) -> KnowledgeRetriever:
+    retriever = request.app.state.knowledge_retriever
+    if not retriever or not retriever.initialized:
+        # 在这里可以考虑更细致的错误，比如 retriever.initialized 为 False 的情况
+        raise HTTPException(status_code=503, detail="知识库服务当前不可用或未初始化。")
+    return retriever
 
 class SearchRequest(BaseModel):
     """知识库搜索请求模型"""
@@ -25,7 +34,7 @@ class SearchResponse(BaseModel):
     """知识库搜索响应模型"""
     success: bool
     message: str
-    results: Optional[str] = None
+    results: Optional[List[Dict[str, Any]]] = None
 
 
 class DocumentRequest(BaseModel):
@@ -42,91 +51,40 @@ class DocumentResponse(BaseModel):
 
 
 @router.post("/search", response_model=SearchResponse)
-async def search_knowledge(request: SearchRequest):
+async def search_knowledge(
+    request_data: SearchRequest, # 重命名以避免与 FastAPI Request 冲突
+    retriever: KnowledgeRetriever = Depends(get_knowledge_retriever) # 注入依赖
+):
     """
     搜索知识库
     """
     try:
-        # 创建知识库检索器实例
-        retriever = KnowledgeRetriever()
-        
-        # 执行搜索
-        results = await retriever.search(
-            query=request.query,
-            top_k=request.top_k
+        search_results = await retriever.search(
+            query_text=request_data.query, 
+            k=request_data.top_k
         )
-        
-        return SearchResponse(
-            success=True,
-            message="搜索成功",
-            results=results
-        )
+        return SearchResponse(success=True, message="搜索成功", results=search_results)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"搜索知识库异常: {str(e)}")
+        logger.error(f"API搜索知识库时发生错误: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"内部服务器错误: {e}")
 
 
-@router.post("/documents", response_model=DocumentResponse)
-async def add_document(request: DocumentRequest):
-    """
-    添加文档到知识库
-    """
-    try:
-        # 创建知识库检索器实例
-        retriever = KnowledgeRetriever()
-        
-        # 添加文档
-        success = await retriever.add_document(
-            content=request.content,
-            metadata=request.metadata
-        )
-        
-        if success:
-            return DocumentResponse(
-                success=True,
-                message="文档添加成功",
-                document_id="doc_123"  # 模拟ID
-            )
-        else:
-            return DocumentResponse(
-                success=False,
-                message="文档添加失败"
-            )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"添加文档异常: {str(e)}")
-
-
-@router.post("/upload", response_model=DocumentResponse)
-async def upload_document(
-    file: UploadFile = File(...),
-    metadata: str = Form("{}")
+@router.post("/add_document", response_model=DocumentResponse)
+async def add_document_to_knowledge_base(
+    doc_request: DocumentRequest,
+    retriever: KnowledgeRetriever = Depends(get_knowledge_retriever) # 注入依赖
 ):
     """
-    上传文件到知识库
+    添加单个文档到知识库
     """
     try:
-        # 读取文件内容
-        content = await file.read()
-        content_text = content.decode("utf-8")
-        
-        # 创建知识库检索器实例
-        retriever = KnowledgeRetriever()
-        
-        # 添加文档
-        success = await retriever.add_document(
-            content=content_text,
-            metadata={"filename": file.filename}
-        )
-        
-        if success:
-            return DocumentResponse(
-                success=True,
-                message="文件上传成功",
-                document_id="doc_456"  # 模拟ID
-            )
-        else:
-            return DocumentResponse(
-                success=False,
-                message="文件上传失败"
-            )
+        document_to_add = {
+            "content": doc_request.content,
+            "metadata": doc_request.metadata or {}
+        }
+        await retriever.add_documents(documents=[document_to_add])
+        return DocumentResponse(success=True, message="文档添加成功")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"上传文件异常: {str(e)}")
+        logger.error(f"API添加文档时发生错误: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"内部服务器错误: {e}")
+

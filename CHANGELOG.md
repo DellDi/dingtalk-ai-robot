@@ -2,6 +2,19 @@
 
 记录所有版本的重要变更。
 
+
+## [未发布] - 2025-06-09
+
+### ✨ 新特性
+-   **重构 `KnowledgeRetriever`**:
+    -   通过 `aiohttp` 直接HTTP API调用集成了通义千问V4嵌入模型，移除了对嵌入功能的SDK依赖。
+    -   利用AutoGen的 `ChromaDBVectorMemory` 进行持久化的本地向量存储。
+    -   确保了初始化、文档添加、搜索和资源清理的完全异步操作。
+    -   通过 `app.core.config.settings` 集中管理配置。
+    -   修复了与协程处理和从 `ChromaDBVectorMemory` 解析数据相关的各种运行时错误。
+    -   在 `app/services/knowledge/retriever.py` 中添加了详细的中文注释和示例用法。
+    -   优化了 `TongyiQWenHttpEmbeddingFunction`，使其使用批量API调用，以提高嵌入多个文本时的效率。
+
 ## [0.1.0] - 2025-05-28
 
 ### 🎉 新增

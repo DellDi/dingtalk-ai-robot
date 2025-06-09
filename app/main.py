@@ -18,6 +18,7 @@ from loguru import logger
 from app.core.config import settings
 from app.core.dingtalk_client import DingTalkClient
 from app.core.scheduler import start_scheduler
+from app.services.knowledge.retriever import KnowledgeRetriever # 新增导入
 
 # 加载环境变量
 load_dotenv()
@@ -34,8 +35,23 @@ async def lifespan(app: FastAPI):
     # 启动时执行
     logger.info("🚀 启动钉钉机器人服务")
     
+    # 初始化 KnowledgeRetriever
+    logger.info("🧠 初始化知识库检索器...")
+    knowledge_retriever = KnowledgeRetriever(
+        collection_name=settings.CHROMA_DEFAULT_COLLECTION_NAME, 
+        persistence_path=settings.VECTOR_DB_PATH
+    )
+    await knowledge_retriever.initialize()
+    if knowledge_retriever.initialized:
+        app.state.knowledge_retriever = knowledge_retriever
+        logger.info("✅ 知识库检索器初始化成功并已共享。")
+    else:
+        app.state.knowledge_retriever = None
+        logger.error("❌ 知识库检索器初始化失败！")
+
     # 启动钉钉客户端（在单独线程中运行）
-    dingtalk_client = DingTalkClient()
+    # 假设 DingTalkClient 构造函数会接收 knowledge_retriever 或其 vector_memory
+    dingtalk_client = DingTalkClient(knowledge_retriever=app.state.knowledge_retriever) 
     loop = asyncio.get_event_loop()
     # 正确调用钩钩客户端的start_forever方法
     dingtalk_future = loop.run_in_executor(thread_pool, dingtalk_client.stream_client.start_forever)
@@ -47,6 +63,12 @@ async def lifespan(app: FastAPI):
     
     # 关闭时执行
     logger.info("🔄 关闭钉钉机器人服务")
+    
+    # 关闭 KnowledgeRetriever
+    if hasattr(app.state, 'knowledge_retriever') and app.state.knowledge_retriever:
+        logger.info("🚪 关闭知识库检索器...")
+        app.state.knowledge_retriever.close()
+    # 关闭钉钉客户端
     dingtalk_client.stop()
     scheduler_task.cancel()
     thread_pool.shutdown(wait=False)

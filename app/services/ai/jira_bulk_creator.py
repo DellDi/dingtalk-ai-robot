@@ -25,7 +25,7 @@ class JiraTicketCreator:
         """
         title = ticket_data.get("title", "未提供标题")
         description = ticket_data.get("description", "未提供描述")
-        customer_name = ticket_data.get("customerName", "N/A") # 如果未提供，则使用默认值
+        customer_name = ticket_data.get("customerName", "杭州新视窗") # 如果未提供，则使用默认值
 
         payload = {
             "point": JIRA_API_POINT,
