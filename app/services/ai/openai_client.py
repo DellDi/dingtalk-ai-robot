@@ -17,6 +17,7 @@ _DEFAULT_CONFIG = {
         "vision": True,
         "function_calling": True,
         "json_output": False,
+        "multiple_system_messages": True,
         "family": ModelFamily.ANY,
         "structured_output": False,
     },

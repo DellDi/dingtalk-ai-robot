@@ -12,7 +12,12 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Fil
 from pydantic import BaseModel, Field
 from loguru import logger
 
+from tempfile import NamedTemporaryFile
+from pathlib import Path
+from fastapi.concurrency import run_in_threadpool
+
 from app.services.knowledge.retriever import KnowledgeRetriever
+from app.services.knowledge.parser import extract_chunks, UnsupportedDocumentError
 
 router = APIRouter()
 
@@ -48,6 +53,14 @@ class DocumentResponse(BaseModel):
     success: bool
     message: str
     document_id: Optional[str] = None
+
+
+class BulkUploadResponse(BaseModel):
+    """批量文档上传响应"""
+    success: bool
+    message: str
+    success_count: int = 0
+    failed_files: Optional[List[str]] = None
 
 
 @router.post("/search", response_model=SearchResponse)
@@ -88,3 +101,64 @@ async def add_document_to_knowledge_base(
         logger.error(f"API添加文档时发生错误: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"内部服务器错误: {e}")
 
+
+# ------------------------- 新增批量上传接口 ----------------------------- #
+
+
+@router.post("/upload_document", response_model=BulkUploadResponse)
+async def upload_document_to_knowledge_base(
+    files: List[UploadFile] = File(..., description="支持 txt / md / pdf / docx"),
+    metadata: Optional[str] = Form(None, description="可选的 JSON 字符串元数据"),
+    retriever: KnowledgeRetriever = Depends(get_knowledge_retriever),
+):
+    """上传一个或多个文档并写入知识库。"""
+
+    # 解析公共元数据
+    base_meta = {}
+    if metadata:
+        try:
+            base_meta = json.loads(metadata)
+        except json.JSONDecodeError as e:
+            raise HTTPException(status_code=400, detail=f"metadata 不是合法 JSON: {e}")
+
+    success_count = 0
+    failed: List[str] = []
+    all_chunk_docs: List[dict] = []
+
+    for uf in files:
+        try:
+            # 保存到临时文件，以便解析器直接读取 Path
+            suffix = Path(uf.filename).suffix
+            with NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                tmp.write(await uf.read())
+                tmp_path = Path(tmp.name)
+
+            # 解析并切片（线程池避免阻塞）
+            chunks = await run_in_threadpool(extract_chunks, tmp_path, base_meta)
+            all_chunk_docs.extend(chunks)
+            success_count += 1
+        except UnsupportedDocumentError as ude:
+            logger.warning(f"不支持的文档格式 {uf.filename}: {ude}")
+            failed.append(uf.filename)
+        except Exception as e:
+            logger.error(f"解析/嵌入文档 {uf.filename} 时发生错误: {e}")
+            failed.append(uf.filename)
+        finally:
+            try:
+                tmp_path.unlink(missing_ok=True)  # cleanup temp file
+            except Exception:
+                pass
+    logger.info(f"成功解析 {all_chunk_docs} 文档，失败 {len(failed)} 个文档")
+    if all_chunk_docs:
+        try:
+            await retriever.add_documents(documents=all_chunk_docs)
+        except Exception as e:
+            logger.error(f"批量写入向量数据库失败: {e}")
+            raise HTTPException(status_code=500, detail=f"写入知识库失败: {e}")
+
+    return BulkUploadResponse(
+        success=len(failed) == 0,
+        message="上传完成" if not failed else "部分文件上传失败",
+        success_count=success_count,
+        failed_files=failed or None,
+    )

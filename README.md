@@ -205,7 +205,7 @@ graph TD
 
     subgraph KnowledgeRetriever [KnowledgeRetriever Service]
         direction LR
-        KR_Init[initialize()] --> EF{TongyiQWenHttpEmbeddingFunction};
+        KR_Init[initialize()] --> EF{                               };
         KR_Init --> VM{ChromaDBVectorMemory};
         EF -.-> HTTP_API[Tongyi QWen HTTP API];
         EF --> AIOHTTP[aiohttp.ClientSession];
@@ -323,3 +323,43 @@ if __name__ == "__main__":
 ## 📄 许可证
 
 [MIT License](LICENSE)
+
+## 📤 文档上传接口 (`/upload_document`)
+
+机器人支持将本地文档嵌入到知识库，目前支持 **txt / pdf / docx / md** 四种格式。
+
+```http
+POST /api/v1/upload_document
+Content-Type: multipart/form-data
+
+# form-data 字段
+file=<本地文件>
+collection=<可选，自定义集合名，默认 global_knowledge_base>
+chunk_size=<可选，默认 1500>
+overlap=<可选，默认 200>
+```
+
+成功响应示例
+```json
+{
+  "code": 0,
+  "msg": "uploaded & embedded 12 chunks",
+  "data": {
+    "collection": "global_knowledge_base",
+    "doc_id": "f6e21..."
+  }
+}
+```
+
+> 📌 默认切片策略为 **自然段 + 滑窗**，可通过 `chunk_size / overlap` 覆盖。
+
+## ⚙️ LLM 配置注意事项
+
+自 **AutoGen 0.6+** 起，若一次对话中包含多条且不连续的 *system* prompt，需要在 `model_info` 中显式开启：
+
+```python
+"multiple_system_messages": True
+```
+
+本项目已在 `app/services/ai/openai_client.py` 中设置，避免出现
+`ValueError: Multiple and Not continuous system messages ...`。

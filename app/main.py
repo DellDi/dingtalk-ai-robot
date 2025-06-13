@@ -50,7 +50,6 @@ async def lifespan(app: FastAPI):
         logger.error("❌ 知识库检索器初始化失败！")
 
     # 启动钉钉客户端（在单独线程中运行）
-    # 假设 DingTalkClient 构造函数会接收 knowledge_retriever 或其 vector_memory
     dingtalk_client = DingTalkClient(knowledge_retriever=app.state.knowledge_retriever) 
     loop = asyncio.get_event_loop()
     # 正确调用钩钩客户端的start_forever方法
@@ -80,6 +79,9 @@ app = FastAPI(
     description="集成AI问答、知识库检索、JIRA管理和服务器维护功能的钉钉机器人",
     version="0.1.0",
     lifespan=lifespan,
+    docs_url="/docs",       # Swagger UI 文档
+    redoc_url="/redoc",     # ReDoc 文档
+    openapi_url="/openapi.json",
 )
 
 # 导入路由

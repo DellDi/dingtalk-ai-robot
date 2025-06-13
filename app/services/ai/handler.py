@@ -16,13 +16,13 @@ from autogen_agentchat.agents import AssistantAgent, UserProxyAgent
 from autogen_agentchat.teams import SelectorGroupChat
 from autogen_agentchat.messages import TextMessage
 from autogen_agentchat.ui import Console
-from autogen_core.memory.vector import ChromaDBVectorMemory # Added import
+from autogen_ext.memory.chromadb import ChromaDBVectorMemory # Added import
 
 from app.core.config import settings
 from app.services.ai.jira_batch_agent import JiraBatchAgent
 from app.services.ai.openai_client import get_openai_client
 
-# --- Selector Prompt --- #
+# --- Selector Prompt ---# 
 SELECTOR_PROMPT_ZH = """你是一个智能路由选择器。根据用户的最新请求内容，从以下可用智能体中选择最合适的一个来处理该请求。
 请仔细阅读智能体的描述，确保选择最相关的智能体。
 
@@ -158,8 +158,7 @@ class AIMessageHandler:
             system_message="你是一个知识库专家。如果用户的问题需要从知识库中查找答案，请调用`search_knowledge_base`工具，并使用用户原始提问作为查询参数。根据工具返回的结果回答用户。如果工具未返回有效信息，请告知用户知识库中没有相关内容。回答完毕后，请以'TERMINATE'结束你的回复。",
             description="知识库专家：当用户提问公司产品、文档、政策或历史数据等需要查阅内部资料的问题时，选择我。我会使用知识库工具查找答案。",
             model_client=self.model_client,
-            memory=self.shared_vector_memory, # Use shared vector memory
-            tools=[self._search_knowledge_base_tool], # Provide the tool
+            memory=[self.shared_vector_memory],  # Use shared vector memory as list per autogen v0.6 API
         )
 
         self.server_admin_agent = AssistantAgent(
@@ -183,7 +182,7 @@ class AIMessageHandler:
         self.general_assistant_agent = AssistantAgent(
             name="GeneralAssistant",
             system_message="""
-            你是一个通用的AI助手。负责回答引导用户，或进行闲聊。
+            你是一个通用的AI助手。负责回答引导用户，或进行闲聊，查看天气等等。
             你可以告诉用户你会什么技能包括：
             1. 服务器管理
             ```
@@ -210,6 +209,7 @@ class AIMessageHandler:
             """,
             description="通用助手：对于日常对话、一般性问题选择我。",
             model_client=self.model_client,
+            # tools=[self._process_weather_request_tool],
         )
 
         selectable_agents = [

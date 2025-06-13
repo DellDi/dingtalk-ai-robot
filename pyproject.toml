@@ -22,7 +22,7 @@ dependencies = [
     "python-multipart>=0.0.20",
     "pydantic>=2.11.5",
     "autogen-agentchat>=0.6",
-    "autogen-ext[openai]>=0.6",
+    "autogen-ext[openai,chromadb]>=0.6",
     "python-jose>=3.5.0",
     "chromadb>=1.0.11",
     "paramiko>=3.5.1",
@@ -31,6 +31,9 @@ dependencies = [
     "jira>=3.5.2",
     "httpx>=0.28.1",
     "aiofiles>=24.1.0",
+    "pdfplumber>=0.11",
+    "python-docx>=1.1",
+    "markdown>=3.6",
 ]
 
 [project.urls]

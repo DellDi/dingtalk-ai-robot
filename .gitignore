@@ -9,3 +9,6 @@ __pycache__
 
 # 本地数据库
 user_data.db
+
+# 向量数据库
+chroma_data

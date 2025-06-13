@@ -3,6 +3,14 @@
 记录所有版本的重要变更。
 
 
+## [未发布] - 2025-06-13
+
+### 📚 文档
+* **README**: 新增 `/upload_document` 接口示例、切片参数说明，以及 AutoGen `multiple_system_messages` 配置注意事项。
+
+### 🛠️ 变更
+* 默认 `model_info` 增加 `multiple_system_messages=True`，兼容 SelectorGroupChat 多智能体多 system prompt 场景。
+
 ## [未发布] - 2025-06-09
 
 ### ✨ 新特性
@@ -41,4 +49,3 @@
 * 🤖 简化AI消息处理流程，直接传递文本内容至JIRA代理，提升数据处理效率
 * 🆔 为JIRA代理流程新增对话ID，增强上下文关联性
 * 🧹 移除独立的JiraBatchAgent文件，优化架构设计，统一JIRA处理逻辑至AIMessageHandler中
-

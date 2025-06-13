@@ -45,8 +45,13 @@ class Settings(BaseSettings):
         description="通义千问OpenAI兼容模式的Base URL"
     )
     VECTOR_DB_TYPE: str = Field("chroma", description="向量数据库类型")
-    VECTOR_DB_PATH: str = Field("./data/vector_db", description="向量数据库路径")
+    VECTOR_DB_PATH: str = Field("./chroma_data/vector_db", description="向量数据库路径")
     CHROMA_DEFAULT_COLLECTION_NAME: str = Field(default="global_knowledge_base", description="ChromaDB默认集合名称")
+
+    # 文档切片配置
+    MAX_CHUNK_CHAR: int = Field(default=1500, description="最大分块字符数")
+    WINDOW: int = Field(default=800, description="窗口大小")
+    OVERLAP: int = Field(default=200, description="重叠大小")
 
     # SSH配置
     SSH_HOSTS: Optional[str] = Field(None, description="SSH主机列表，逗号分隔")

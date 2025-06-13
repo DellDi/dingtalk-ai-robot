@@ -24,7 +24,7 @@ from loguru import logger
 from app.core.config import settings
 from app.services.ai.handler import AIMessageHandler
 from app.services.knowledge.retriever import KnowledgeRetriever # 新增导入
-from autogen_core.memory.vector import ChromaDBVectorMemory # 新增导入
+from autogen_ext.memory.chromadb import ChromaDBVectorMemory # 新增导入
 
 
 class DingTalkClient:

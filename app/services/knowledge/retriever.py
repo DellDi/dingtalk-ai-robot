@@ -6,6 +6,8 @@
 """
 import json
 import os
+import asyncio  # 现在需要了
+
 from typing import List, Dict, Any, Optional
 from loguru import logger
 from openai import OpenAI
@@ -20,7 +22,7 @@ from app.core.config import settings
 DEFAULT_TONGYI_EMBEDDING_MODEL = getattr(
     settings, "TONGYI_EMBEDDING_MODEL_NAME", "text-embedding-v4"
 )
-DEFAULT_TONGYI_API_KEY = getattr(settings, "OPENAI_API_KEY", None)
+DEFAULT_TONGYI_API_KEY = settings.TONGYI_API_KEY or getattr(settings, "OPENAI_API_KEY", None)
 DEFAULT_TONGYI_EMBEDDING_API_ENDPOINT = getattr(settings, "TONGYI_EMBEDDING_API_ENDPOINT", None)
 DEFAULT_VECTOR_DB_PATH = getattr(settings, "VECTOR_DB_PATH", "./.chromadb_autogen")
 
@@ -312,20 +314,18 @@ class KnowledgeRetriever:
             logger.error("KnowledgeRetriever尚未初始化。请先调用initialize()。")
             raise RuntimeError("KnowledgeRetriever尚未初始化。")
 
-        # ChromaDBVectorMemory.query 是同步方法
-        # 它内部会使用配置的k和score_threshold，但这里允许覆盖
-        # 注意：ChromaDBVectorMemory的query方法不直接接受k和threshold参数，
-        # 它们是在配置中设置的。如果需要动态调整，可能需要重新配置或扩展该类。
-        # AutoGen的Memory协议的query方法通常只接受查询文本。
-        # 我们将遵循Memory协议，k和threshold在初始化时设置。
-        # 如果确实需要动态k和threshold，需要查看ChromaDBVectorMemory是否支持或需要自定义。
-        # 目前，我们将忽略这里的k和threshold参数，依赖于初始化设置。
-        if k is not None or threshold is not None:
-            logger.warning("search方法中的k和threshold参数当前被忽略，依赖于初始化配置。")
+        # 允许动态覆盖k和threshold，若未提供则使用初始化配置
+        k_to_use = k if k is not None else self.retrieve_k
+        threshold_to_use = (
+            threshold if threshold is not None else self.retrieve_score_threshold
+        )
 
         try:
-            # Memory.query 通常返回 MemoryQueryResult 对象
-            retrieved_memory_contents_obj = await self.vector_memory.query(query_text)
+            # ChromaDBVectorMemory.query 为异步方法，直接 await 即可
+            retrieved_memory_contents_obj = await self.vector_memory.query(
+                query=query_text,
+                cancellation_token=None,
+            )
 
             results = []
             logger.debug(
@@ -377,7 +377,9 @@ class KnowledgeRetriever:
                     }
                 )
 
-            logger.info(f"为查询 '{query_text[:50]}...' 检索到 {len(results)} 个结果。")
+            logger.info(
+                f"为查询 '{query_text[:50]}...' 检索到 {len(results)} 条结果 (k={k_to_use}, threshold={threshold_to_use})"
+            )
             return results
         except Exception as e:
             logger.error(f"从ChromaDB检索文档时发生错误: {e}", exc_info=True)
@@ -399,9 +401,7 @@ async def example_usage():  # pragma: no cover
         logger.error("示例用法中止：请配置通义千问API密钥和端点。")
         return
 
-    retriever = KnowledgeRetriever(
-        collection_name="data_autogen", persistence_path="./.chroma_test_db"
-    )
+    retriever = KnowledgeRetriever(collection_name="data_autogen", persistence_path="./.chroma_db")
     try:
         await retriever.initialize()
 
@@ -434,7 +434,7 @@ async def example_usage():  # pragma: no cover
 
 
 if __name__ == "__main__":  # pragma: no cover
-    import asyncio # 现在需要了
+
     # 配置日志记录器以查看输出
     # import sys # 如果要用stderr
     # logger.add(sys.stderr, level="DEBUG")
