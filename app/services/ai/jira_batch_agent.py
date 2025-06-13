@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import asyncio
 from typing import List, Dict, Any, Optional
 
@@ -13,9 +14,8 @@ from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_agentchat.ui import Console
 from loguru import logger
 
-import re
 from app.db_utils import get_jira_account, save_jira_account
-from app.services.ai.jira_bulk_creator import JiraTicketCreator # 新增导入
+from app.services.ai.tools import JiraTicketCreator
 from app.services.ai.openai_client import get_openai_client
 
 

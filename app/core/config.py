@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     # AI服务配置
     OPENAI_API_KEY: Optional[str] = Field(None, description="OpenAI API密钥")
 
+    # 天气服务配置
+    OPENWEATHER_API_KEY: Optional[str] = Field(
+        None, description="OpenWeather One Call 3.0 API 密钥"
+    )
+
     # 知识库配置
     TONGYI_API_KEY: Optional[str] = Field(None, description="通义千问 API密钥")
     TONGYI_EMBEDDING_MODEL_NAME: str = Field(

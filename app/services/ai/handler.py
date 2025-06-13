@@ -21,8 +21,9 @@ from autogen_ext.memory.chromadb import ChromaDBVectorMemory # Added import
 from app.core.config import settings
 from app.services.ai.jira_batch_agent import JiraBatchAgent
 from app.services.ai.openai_client import get_openai_client
+from app.services.ai.tools import process_weather_request  # Weather tool import
 
-# --- Selector Prompt ---# 
+# --- Selector Prompt ---#
 SELECTOR_PROMPT_ZH = """你是一个智能路由选择器。根据用户的最新请求内容，从以下可用智能体中选择最合适的一个来处理该请求。
 请仔细阅读智能体的描述，确保选择最相关的智能体。
 
@@ -46,7 +47,7 @@ class AIMessageHandler:
             logger.info("AIMessageHandler initialized with shared vector_memory.")
         else:
             logger.warning("AIMessageHandler initialized without shared vector_memory. Knowledge base functionality will be limited.")
-        
+
         self.jira_batch_agent = JiraBatchAgent() # JIRA批处理实例
         self._setup_api_keys()
         self.model_client = get_openai_client(model_info={"json_output": False})
@@ -79,7 +80,7 @@ class AIMessageHandler:
                 n_results=n_results,
                 # include=["metadatas", "documents"] # Ensure documents are included if needed by processing
             )
-            
+
             # Process results (this part might need adjustment based on actual structure of retrieved_docs_dict)
             # Assuming retrieved_docs_dict is like: {'ids': [['id1']], 'documents': [['doc1_content']], 'metadatas': [[{'source': 'src1'}]]}
             # And we want to return a string representation of the documents
@@ -88,15 +89,15 @@ class AIMessageHandler:
                 # The result for a single query is the first element in the list of lists
                 docs_for_query = retrieved_docs_dict["documents"][0]
                 metadatas_for_query = retrieved_docs_dict.get("metadatas", [[]])[0]
-                
+
                 for i, doc_content in enumerate(docs_for_query):
                     metadata_info = metadatas_for_query[i] if i < len(metadatas_for_query) else {}
                     source = metadata_info.get("source", "未知来源")
-                    processed_results.append(f"来源: {source}\n内容: {doc_content}") 
-            
+                    processed_results.append(f"来源: {source}\n内容: {doc_content}")
+
             if not processed_results:
                 return "未在知识库中找到相关信息。"
-            
+
             return "\n\n---\n\n".join(processed_results)
         except Exception as e:
             logger.error(f"Error during knowledge base search: {e}")
@@ -121,37 +122,17 @@ class AIMessageHandler:
         logger.warning(f"JiraBatchAgent (通过工具) 返回了非标准格式: {response_data}")
         return "JIRA任务已提交处理，但响应格式无法直接转换为文本。"
 
+    async def _process_weather_request_tool(self, request_text: str) -> str:
+        """工具函数：处理天气查询请求，调用 OpenWeather 工具"""
+        logger.info(f"工具: _process_weather_request_tool 调用，请求文本: {request_text}")
+        try:
+            return await process_weather_request(request_text)
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"天气查询工具调用失败: {e}")
+            return f"❌ 无法获取天气信息: {e}"
+
     def _init_agents_and_groupchat(self):
         """初始化智能体和 SelectorGroupChat"""
-
-        # self.user_proxy = UserProxyAgent(
-        #     name="UserProxy",
-        #     description="一个代理，可以执行代码和调用提供的工具函数，例如知识库搜索或JIRA操作。",
-        # )
-
-        # self.indent_agent = AssistantAgent(
-        #     "PlanningAgent",
-        #     description="一个意图识别智能体，负责识别用户意图并选择合适的智能体处理。",
-        #     model_client=self.model_client,
-        #     system_message="""
-        #     你是一个意图识别智能体，负责识别用户意图并选择合适的智能体处理。
-        #     你的团队成员包括：
-        #         KnowledgeExpert: 知识库专家
-        #         ServerAdmin: 服务器管理专家
-        #         JiraSpecialist: JIRA任务专家
-        #         GeneralAssistant: 通用助手-日常问题
-
-        #     你只识别用户意图并选择合适的智能体，不亲自执行。
-
-        #     补充团队成员命中关键词拓展：
-        #     KnowledgeExpert: 命中关键词拓展：1. 你是谁？2. 曾迪是谁？
-
-        #     当识别出用户意图后，请使用以下格式：
-        #     1. <agent> : <task>
-
-        #     当识别出用户意图后，请总结发现并以 "TERMINATE" 结束你的回复。
-        #     """,
-        # )
 
         self.knowledge_expert_agent = AssistantAgent(
             name="KnowledgeExpert",
@@ -195,8 +176,8 @@ class AIMessageHandler:
             ```
                 配置jira信息
                 **用户名**: `your_jira_username`
-                **密码**: `your_jira_password` 
-                
+                **密码**: `your_jira_password`
+
             ```
             格式要求：
             ```
@@ -204,12 +185,26 @@ class AIMessageHandler:
             2. 不限制内容，但要确保信息基本可用
             3. 默认批量提单，如果不需要批量，请在描述中体现
             ```
-            
+
+            ---
+            你的回答尽量整理成一个标准markdown格式的文档，语言风趣幽默。按照回复、需求、问题、建议等不同的场景，支持多种丰富的markdown语法，如：
+            ```
+            1. **加粗**
+            2. *斜体*
+            3. `代码`
+            4. [链接](https://www.example.com)
+            5. ![图片](https://www.example.com/image.png)
+            6. 表格
+            7. 列表
+            8. mermaid图表
+            9. 互联网风格icon
+            ```
+
             回答完毕后，请以'TERMINATE'结束你的回复。
             """,
             description="通用助手：对于日常对话、一般性问题选择我。",
             model_client=self.model_client,
-            # tools=[self._process_weather_request_tool],
+            tools=[self._process_weather_request_tool],
         )
 
         selectable_agents = [
