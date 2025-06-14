@@ -37,14 +37,14 @@ class DingTalkClient:
         self.robot_code = settings.DINGTALK_ROBOT_CODE
         self._token_cache = {"token": None, "expire": 0}
         self.stream_client = None
-        
+
         shared_vector_memory: Optional[ChromaDBVectorMemory] = None
         if knowledge_retriever and knowledge_retriever.initialized:
             shared_vector_memory = knowledge_retriever.vector_memory
             logger.info("DingTalkClient接收到共享的vector_memory")
         else:
             logger.warning("DingTalkClient未接收到有效的共享vector_memory，知识库功能可能受限")
-            
+
         self.ai_handler = AIMessageHandler(vector_memory=shared_vector_memory)
 
         # 设置全局实例引用，便于其他模块访问

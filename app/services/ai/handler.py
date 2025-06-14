@@ -19,9 +19,14 @@ from autogen_agentchat.ui import Console
 from autogen_ext.memory.chromadb import ChromaDBVectorMemory # Added import
 
 from app.core.config import settings
-from app.services.ai.jira_batch_agent import JiraBatchAgent
+
 from app.services.ai.openai_client import get_openai_client
-from app.services.ai.tools import process_weather_request  # Weather tool import
+from app.services.ai.tools import (
+    process_weather_request,
+    search_knowledge_base,
+    process_jira_request,
+)
+
 
 # --- Selector Prompt ---#
 SELECTOR_PROMPT_ZH = """你是一个智能路由选择器。根据用户的最新请求内容，从以下可用智能体中选择最合适的一个来处理该请求。
@@ -36,7 +41,6 @@ SELECTOR_PROMPT_ZH = """你是一个智能路由选择器。根据用户的最�
 请仔细阅读最新的用户请求，并仅选择一个最能胜任该任务的智能体名称。不要添加任何解释或额外文字，只需给出智能体名称。
 选择的智能体:"""
 
-
 class AIMessageHandler:
     """AI消息处理器，基于AutoGen SelectorGroupChat实现多智能体对话和意图识别"""
 
@@ -48,7 +52,6 @@ class AIMessageHandler:
         else:
             logger.warning("AIMessageHandler initialized without shared vector_memory. Knowledge base functionality will be limited.")
 
-        self.jira_batch_agent = JiraBatchAgent() # JIRA批处理实例
         self._setup_api_keys()
         self.model_client = get_openai_client(model_info={"json_output": False})
         self._init_agents_and_groupchat()
@@ -66,67 +69,28 @@ class AIMessageHandler:
             logger.warning("未配置任何LLM API密钥，AI功能可能受限或无法使用")
 
     async def _search_knowledge_base_tool(self, query: str, n_results: int = 3) -> str:
-        """工具函数：用于知识库检索，使用共享的vector_memory"""
-        logger.info(f"工具: _search_knowledge_base_tool 调用，查询: {query}")
-        if not self.shared_vector_memory:
-            logger.warning("_search_knowledge_base_tool: shared_vector_memory is not available.")
-            return "知识库未正确配置或初始化，无法执行搜索。"
-
-        try:
-            # ChromaDBVectorMemory.retrieve_docs is synchronous
-            retrieved_docs_dict = await asyncio.to_thread(
-                self.shared_vector_memory.retrieve_docs,
-                query_texts=[query],
-                n_results=n_results,
-                # include=["metadatas", "documents"] # Ensure documents are included if needed by processing
-            )
-
-            # Process results (this part might need adjustment based on actual structure of retrieved_docs_dict)
-            # Assuming retrieved_docs_dict is like: {'ids': [['id1']], 'documents': [['doc1_content']], 'metadatas': [[{'source': 'src1'}]]}
-            # And we want to return a string representation of the documents
-            processed_results = []
-            if retrieved_docs_dict and retrieved_docs_dict.get("documents"):
-                # The result for a single query is the first element in the list of lists
-                docs_for_query = retrieved_docs_dict["documents"][0]
-                metadatas_for_query = retrieved_docs_dict.get("metadatas", [[]])[0]
-
-                for i, doc_content in enumerate(docs_for_query):
-                    metadata_info = metadatas_for_query[i] if i < len(metadatas_for_query) else {}
-                    source = metadata_info.get("source", "未知来源")
-                    processed_results.append(f"来源: {source}\n内容: {doc_content}")
-
-            if not processed_results:
-                return "未在知识库中找到相关信息。"
-
-            return "\n\n---\n\n".join(processed_results)
-        except Exception as e:
-            logger.error(f"Error during knowledge base search: {e}")
-            return f"知识库检索时发生错误: {e}"
+        """知识库检索工具（薄封装，实际逻辑在 tools.knowledge_base）"""
+        return await search_knowledge_base(self.shared_vector_memory, query, n_results)
 
     async def _process_jira_request_tool(self, request_text: str) -> str:
-        """工具函数：用于处理JIRA请求"""
-        logger.info(f"工具: _process_jira_request_tool 调用，请求文本: {request_text}")
+        """JIRA 请求工具（薄封装，实际逻辑在 tools.jira）"""
+        return await process_jira_request(
+            request_text,
+            sender_id=self._current_sender_id or "unknown_sender",
+            conversation_id=self._current_conversation_id or "unknown_conversation",
+        )
 
-        message_payload = {
-            "text": request_text,
-            "sender_id": self._current_sender_id or "unknown_sender",
-            "conversation_id": self._current_conversation_id or "unknown_conversation"
-        }
-        response_data = await self.jira_batch_agent.process(message_payload)
+    async def _process_weather_request_tool(self, *, city: str, days: int = 1) -> str:
+        """天气查询工具薄封装，直接转调 `tools.weather.process_weather_request`。
 
-        if isinstance(response_data, dict) and "content" in response_data:
-            return str(response_data["content"])
-        elif isinstance(response_data, str):
-            return response_data
-
-        logger.warning(f"JiraBatchAgent (通过工具) 返回了非标准格式: {response_data}")
-        return "JIRA任务已提交处理，但响应格式无法直接转换为文本。"
-
-    async def _process_weather_request_tool(self, request_text: str) -> str:
-        """工具函数：处理天气查询请求，调用 OpenWeather 工具"""
-        logger.info(f"工具: _process_weather_request_tool 调用，请求文本: {request_text}")
+        参数
+        ----
+        city: 中文城市名。
+        days: 1=今日，7=未来 7 天。
+        """
+        logger.info(f"工具: _process_weather_request_tool 调用，city={city}, days={days}")
         try:
-            return await process_weather_request(request_text)
+            return await process_weather_request(city=city, days=days)
         except Exception as e:  # noqa: BLE001
             logger.error(f"天气查询工具调用失败: {e}")
             return f"❌ 无法获取天气信息: {e}"
@@ -170,6 +134,7 @@ class AIMessageHandler:
              dify服务重启
              dify服务自动化升级
              系统运行状态查询
+             天气查询、支持近七天
             ```
             2. 数据技术知识查询
             3. JIRA需求提单：告诉用户提单格式要求：
@@ -185,7 +150,6 @@ class AIMessageHandler:
             2. 不限制内容，但要确保信息基本可用
             3. 默认批量提单，如果不需要批量，请在描述中体现
             ```
-
             ---
             你的回答尽量整理成一个标准markdown格式的文档，语言风趣幽默。按照回复、需求、问题、建议等不同的场景，支持多种丰富的markdown语法，如：
             ```
@@ -199,10 +163,11 @@ class AIMessageHandler:
             8. mermaid图表
             9. 互联网风格icon
             ```
+            如果你的得到的信息有来源，请标明来源。
 
             回答完毕后，请以'TERMINATE'结束你的回复。
             """,
-            description="通用助手：对于日常对话、一般性问题选择我。",
+            description="通用助手：对于日常对话、一般性问题，天气问题选择我。",
             model_client=self.model_client,
             tools=[self._process_weather_request_tool],
         )

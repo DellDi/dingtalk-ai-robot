@@ -2,7 +2,7 @@
 
 ## 📝 项目概述
 
-一个基于钉钉开放平台的智能机器人系统，集成AI问答、知识库检索、JIRA任务管理和服务器维护功能。使用Python 3.12和FastAPI构建，采用微软AutoGen框架实现智能化交互。
+一个基于钉钉开放平台的智能机器人系统，集成AI问答、知识库检索、天气查询、JIRA任务管理和服务器维护功能。使用Python 3.12和FastAPI构建，采用微软AutoGen框架实现智能化交互。
 
 ## 🚀 主要功能
 
@@ -12,6 +12,7 @@ sequenceDiagram
     participant Bot as 钉钉AI机器人
     participant AI as AutoGen多智能体
     participant KB as 知识库系统
+    participant Weather as 天气服务
     participant Ticket as 工单系统
     participant JIRA as JIRA平台
     participant Server as 服务器系统
@@ -31,6 +32,13 @@ sequenceDiagram
         KB->>KB: 向量数据库检索
         KB->>Bot: 返回检索结果
         Bot->>User: 展示知识库答案
+    
+    %% 天气查询流程
+    else 天气查询
+        Bot->>Weather: 查询城市天气
+        Weather->>Weather: 调用OpenWeather API
+        Weather->>Bot: 返回天气信息
+        Bot->>User: 展示Markdown格式天气
     
     %% 快捷提单流程
     else 快捷提单
@@ -70,21 +78,25 @@ sequenceDiagram
    - 支持对接企业知识库
    - 提供精准信息检索和回答
 
-3. **快捷提单功能**
+3. **天气查询**
+   - 支持实时天气信息查询
+   - 支持Markdown格式天气信息展示
+
+4. **快捷提单功能**
    - 群聊中快速创建工单
    - 自定义模板支持
 
-4. **JIRA任务管理**
+5. **JIRA任务管理**
    - 定时检查JIRA任务规范性
    - 群内推送卡片通知
    - 自动创建相关人员待办
 
-5. **服务器维护助手**
+6. **服务器维护助手**
    - SSH远程操作支持
    - Dify服务自动化升级
    - AI驱动的日志分析与总结
 
-6. **AI智能日报/周报**
+7. **AI智能日报/周报**
    - 每天的日报，AI智能分析
    - 每周五根据本周的每天的日报，生成本周的周报（AI智能分析）
    - 生成后定时定点推送
@@ -95,7 +107,7 @@ sequenceDiagram
 - **智能体引擎**：Microsoft AutoGen
 - **依赖管理**：uv (Python包管理工具)
 - **开发环境**：Python 3.12+
-- **平台集成**：钉钉开放平台、JIRA API
+- **平台集成**：钉钉开放平台、JIRA API、OpenWeather API
 
 ## 🔧 安装与配置
 
@@ -150,9 +162,10 @@ python -m app.main
 
 1. **AI问答**：在群聊中@机器人并提问
 2. **知识库检索**：使用特定指令触发知识库搜索
-3. **提单功能**：按格式发送提单信息
-4. **JIRA管理**：系统自动执行定时检查
-5. **服务器维护**：使用指定命令触发服务器操作
+3. **天气查询**：使用特定指令触发天气信息查询
+4. **提单功能**：按格式发送提单信息
+5. **JIRA管理**：系统自动执行定时检查
+6. **服务器维护**：使用指定命令触发服务器操作
 
 ## 🧩 项目结构
 
@@ -163,146 +176,25 @@ dingtalk-ai-robot/
 │   ├── core/               # 核心配置和功能
 │   ├── services/           # 服务模块
 │   │   ├── ai/             # AI智能体
+│   │   │   ├── agent/      # 智能体实现
+│   │   │   ├── tools/      # AI工具模块
+│   │   │   │   ├── __init__.py      # 统一导出中心
+│   │   │   │   ├── weather.py       # 天气查询工具
+│   │   │   │   ├── knowledge_base.py # 知识库检索工具
+│   │   │   │   ├── jira.py          # JIRA处理工具
+│   │   │   │   └── jira_bulk_creator.py # JIRA批量创建工具
+│   │   │   └── handler.py  # AI消息处理器
 │   │   ├── dingtalk/       # 钉钉API集成
 │   │   ├── jira/           # JIRA服务
 │   │   ├── knowledge/      # 知识库服务
-│   │   └── ssh/            # SSH服务
+│   │   ├── ssh/            # SSH服务
+│   │   └── weather/        # 天气服务
 │   └── main.py             # 应用入口
 ├── tests/                  # 测试目录
 ├── .env.example            # 环境变量示例
 ├── pyproject.toml          # 项目配置和依赖
 ├── CHANGELOG.md            # 变更日志
 └── README.md               # 项目说明
-```
-
-## 🧠 本地知识检索器 (`KnowledgeRetriever`)
-
-`KnowledgeRetriever` 服务提供了使用文本嵌入来构建和查询本地知识库的功能。它利用微软 AutoGen 的 `ChromaDBVectorMemory` 进行持久化向量存储，并使用自定义的 `TongyiQWenHttpEmbeddingFunction` 通过通义千问 V3 文本嵌入 API (HTTP端点) 生成嵌入。这种方法避免了对嵌入模型的直接SDK依赖。
-
-### ✨ 特性
-
--   **异步操作**: 完全异步的设计，用于初始化、文档添加、搜索和资源清理，适用于AutoGen多智能体系统。
--   **自定义通义千问嵌入**: 使用 `aiohttp` 直接调用通义千问嵌入API，确保了嵌入生成的灵活性并最小化外部依赖。
--   **持久化向量存储**: 使用 `ChromaDBVectorMemory` 进行持久化存储，允许知识库在不同会话间保存和加载。
--   **可配置性**: 关键参数（如API密钥、模型名称、API端点和数据库路径）通过 `app.core.config.settings` 和环境变量进行管理。
--   **嵌入一致性**: 确保在索引文档和查询时使用相同的嵌入模型，这对于检索准确性至关重要。
--   **批量嵌入效率**: 利用通义千问API的批量嵌入能力，提高处理多个文档时的性能。
-
-### 🛠️ 配置
-
-`KnowledgeRetriever` 依赖以下配置 (通常通过环境变量或由 `pydantic-settings` 加载的 `.env` 文件进行配置):
-
--   `TONGYI_API_KEY`: 你的通义千问API密钥。
--   `TONGYI_EMBEDDING_MODEL_NAME`: 要使用的特定通义嵌入模型 (例如，`text-embedding-v4`)。默认为 `"text-embedding-v4"`。
--   `TONGYI_EMBEDDING_API_ENDPOINT`: 通义嵌入API的HTTP端点。默认为 `"https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings"`。
--   `VECTOR_DB_PATH`: ChromaDB持久化其数据的本地文件系统路径。默认为 `"./.chroma_test_db"` (如示例中使用，可以配置)。
-
-### 🏗️ Architecture and Data Flow
-
-```mermaid
-graph TD
-    A[USER/Application] --> KR{KnowledgeRetriever};
-
-    subgraph KnowledgeRetriever [KnowledgeRetriever Service]
-        direction LR
-        KR_Init[initialize()] --> EF{                               };
-        KR_Init --> VM{ChromaDBVectorMemory};
-        EF -.-> HTTP_API[Tongyi QWen HTTP API];
-        EF --> AIOHTTP[aiohttp.ClientSession];
-        VM -.-> DB[ChromaDB Persistent Storage];
-    end
-    
-    Settings[app.core.config.settings] -.-> KR_Init;
-    Settings -.-> EF;
-
-    A -- Add Documents (List<Dict>) --> KR_Add[add_documents()];
-    KR_Add -- Texts to Embed --> EF;
-    EF -- Embeddings --> KR_Add;
-    KR_Add -- MemoryContent to Add --> VM;
-    
-    A -- Search(query_text) --> KR_Search[search()];
-    KR_Search -- Query to Embed --> EF;
-    EF -- Query Embedding --> KR_Search;
-    KR_Search -- Embedded Query --> VM;
-    VM -- MemoryQueryResult --> KR_Search;
-    KR_Search -- Formatted Results (List<Dict>) --> A;
-
-    A -- Close --> KR_Close[close()];
-    KR_Close --> EF_Close[EF.close_session()];
-    EF_Close --> AIOHTTP;
-    KR_Close --> VM_Close[VM.close()];
-
-    style A fill:#f9f,stroke:#333,stroke-width:2px
-    style KR fill:#bbf,stroke:#333,stroke-width:2px
-    style HTTP_API fill:#ff9,stroke:#333,stroke-width:2px
-    style DB fill:#9cf,stroke:#333,stroke-width:2px
-    style Settings fill:#lightgrey,stroke:#333,stroke-width:2px
-```
-
-### 📦 Dependencies
-
--   `autogen-core`
--   `autogen-extensions` (specifically for `ChromaDBVectorMemory`)
--   `chromadb`
--   `aiohttp` (newly added for HTTP calls to Tongyi API)
--   `loguru`
--   `pydantic`
-
-### 🚀 Example Usage
-
-(Adapted from `app/services/knowledge/retriever.py`)
-
-```python
-import asyncio
-from app.services.knowledge.retriever import KnowledgeRetriever
-from app.core.config import settings # Ensure settings are loaded
-
-async def main():
-    # Ensure TONGYI_API_KEY is set in your environment or .env file
-    if not settings.TONGYI_API_KEY:
-        print("示例用法中止：请配置通义千问API密钥。")
-        return
-
-    retriever = KnowledgeRetriever(
-        collection_name="my_knowledge_base",
-        persistence_path="./.my_chroma_db", # Example path
-        tongyi_api_key=settings.TONGYI_API_KEY,
-        tongyi_api_endpoint=settings.TONGYI_EMBEDDING_API_ENDPOINT,
-        embedding_model_name=settings.TONGYI_EMBEDDING_MODEL_NAME
-    )
-
-    try:
-        await retriever.initialize()
-        print("KnowledgeRetriever initialized.")
-
-        documents_to_add = [
-            {"content": "AutoGen is a framework for building multi-agent applications.", "metadata": {"source": "doc1"}},
-            {"content": "ChromaDB is a vector store used for similarity search.", "metadata": {"source": "doc2"}},
-            {"content": "The Tongyi QWen API provides powerful text embedding models.", "metadata": {"source": "doc3"}},
-        ]
-        await retriever.add_documents(documents_to_add)
-        print(f"Added {len(documents_to_add)} documents.")
-
-        query1 = "What is AutoGen?"
-        results1 = await retriever.search(query1)
-        print(f"Search results for '{query1}':")
-        for res in results1:
-            print(f"  Content: {res['content']}, Metadata: {res['metadata']}")
-
-        query2 = "Tell me about vector databases."
-        results2 = await retriever.search(query2)
-        print(f"Search results for '{query2}':")
-        for res in results2:
-            print(f"  Content: {res['content']}, Metadata: {res['metadata']}")
-
-    except Exception as e:
-        print(f"An error occurred: {e}")
-    finally:
-        await retriever.close()
-        print("KnowledgeRetriever closed.")
-
-if __name__ == "__main__":
-    asyncio.run(main())
 ```
 
 ## 📋 开发计划
@@ -363,3 +255,46 @@ overlap=<可选，默认 200>
 
 本项目已在 `app/services/ai/openai_client.py` 中设置，避免出现
 `ValueError: Multiple and Not continuous system messages ...`。
+
+## 🛠️ AI工具模块化架构
+
+项目采用模块化设计，将AI工具功能拆分到独立文件中：
+
+- **统一导出**: `tools/__init__.py` 作为所有工具的统一导出中心
+- **天气工具**: `tools/weather.py` - 集成OpenWeather One Call API 3.0
+- **知识库工具**: `tools/knowledge_base.py` - 向量数据库检索功能
+- **JIRA工具**: `tools/jira.py` - JIRA任务处理与批量操作
+- **薄包装层**: `handler.py` 保持向后兼容的薄包装接口
+
+### 核心工具流程图
+
+```mermaid
+graph TD
+    A[用户消息] --> B[AIMessageHandler]
+    B --> C{消息类型判断}
+    
+    C -->|天气查询| D[weather.process_weather_request]
+    C -->|知识检索| E[knowledge_base.search_knowledge_base]
+    C -->|JIRA处理| F[jira.process_jira_request]
+    C -->|通用AI| G[general_assistant_agent]
+    
+    D --> H[OpenWeather API]
+    H --> I[Markdown格式化]
+    I --> J[返回天气信息]
+    
+    E --> K[ChromaDB向量检索]
+    K --> L[相关知识匹配]
+    L --> M[返回检索结果]
+    
+    F --> N[JiraBatchAgent处理]
+    N --> O[JIRA API操作]
+    O --> P[返回处理结果]
+    
+    G --> Q[AutoGen多智能体]
+    Q --> R[AI智能回复]
+    
+    J --> S[钉钉消息回复]
+    M --> S
+    P --> S
+    R --> S
+```

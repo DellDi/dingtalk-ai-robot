@@ -3,19 +3,18 @@ import os
 import re
 import asyncio
 from typing import List, Dict, Any, Optional
+from loguru import logger
 
-from autogen_core.models import ModelFamily
 from autogen_core import CancellationToken
-from autogen_agentchat.agents import AssistantAgent, UserProxyAgent
+from autogen_agentchat.agents import AssistantAgent
 from autogen_agentchat.messages import TextMessage
 from autogen_agentchat.base import Response, TaskResult
 from autogen_agentchat.conditions import TextMentionTermination, ExternalTermination
 from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_agentchat.ui import Console
-from loguru import logger
 
 from app.db_utils import get_jira_account, save_jira_account
-from app.services.ai.tools import JiraTicketCreator
+from app.services.ai.tools.jira_bulk_creator import JiraTicketCreator
 from app.services.ai.openai_client import get_openai_client
 
 
