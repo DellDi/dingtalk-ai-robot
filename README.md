@@ -16,37 +16,37 @@ sequenceDiagram
     participant Ticket as 工单系统
     participant JIRA as JIRA平台
     participant Server as 服务器系统
-    
+
     User->>Bot: 发送消息
-    
+
     %% AI智能问答流程
     alt AI智能问答
         Bot->>AI: 转发用户问题
         AI->>AI: 多智能体协作处理
         AI->>Bot: 返回智能回复
         Bot->>User: 展示AI回答
-    
+
     %% 知识库检索流程
     else 知识库检索
         Bot->>KB: 查询相关知识
         KB->>KB: 向量数据库检索
         KB->>Bot: 返回检索结果
         Bot->>User: 展示知识库答案
-    
+
     %% 天气查询流程
     else 天气查询
         Bot->>Weather: 查询城市天气
         Weather->>Weather: 调用OpenWeather API
         Weather->>Bot: 返回天气信息
         Bot->>User: 展示Markdown格式天气
-    
+
     %% 快捷提单流程
     else 快捷提单
         Bot->>Ticket: 创建工单请求
         Ticket->>Ticket: 工单自动创建
         Ticket->>Bot: 返回工单状态
         Bot->>User: 展示工单创建结果
-    
+
     %% JIRA任务管理流程
     else JIRA任务管理
         Bot->>JIRA: 定时检查任务
@@ -54,7 +54,7 @@ sequenceDiagram
         JIRA->>Bot: 返回检查结果
         Bot->>User: 推送卡片通知
         Bot->>JIRA: 创建待办任务
-    
+
     %% 服务器管理流程
     else 服务器管理
         Bot->>Server: 执行管理命令
@@ -272,27 +272,27 @@ overlap=<可选，默认 200>
 graph TD
     A[用户消息] --> B[AIMessageHandler]
     B --> C{消息类型判断}
-    
+
     C -->|天气查询| D[weather.process_weather_request]
     C -->|知识检索| E[knowledge_base.search_knowledge_base]
     C -->|JIRA处理| F[jira.process_jira_request]
     C -->|通用AI| G[general_assistant_agent]
-    
+
     D --> H[OpenWeather API]
     H --> I[Markdown格式化]
     I --> J[返回天气信息]
-    
+
     E --> K[ChromaDB向量检索]
     K --> L[相关知识匹配]
     L --> M[返回检索结果]
-    
+
     F --> N[JiraBatchAgent处理]
     N --> O[JIRA API操作]
     O --> P[返回处理结果]
-    
+
     G --> Q[AutoGen多智能体]
     Q --> R[AI智能回复]
-    
+
     J --> S[钉钉消息回复]
     M --> S
     P --> S

@@ -9,14 +9,14 @@ import os
 import asyncio
 from autogen_agentchat.base import TaskResult
 from loguru import logger
-from typing import Optional, Dict, Any, List, Union
+from typing import Optional
 
 from autogen_agentchat.conditions import MaxMessageTermination, TextMentionTermination
-from autogen_agentchat.agents import AssistantAgent, UserProxyAgent
+from autogen_agentchat.agents import AssistantAgent
 from autogen_agentchat.teams import SelectorGroupChat
 from autogen_agentchat.messages import TextMessage
 from autogen_agentchat.ui import Console
-from autogen_ext.memory.chromadb import ChromaDBVectorMemory # Added import
+from autogen_ext.memory.chromadb import ChromaDBVectorMemory  # Added import
 
 from app.core.config import settings
 
@@ -41,6 +41,7 @@ SELECTOR_PROMPT_ZH = """你是一个智能路由选择器。根据用户的最�
 请仔细阅读最新的用户请求，并仅选择一个最能胜任该任务的智能体名称。不要添加任何解释或额外文字，只需给出智能体名称。
 选择的智能体:"""
 
+
 class AIMessageHandler:
     """AI消息处理器，基于AutoGen SelectorGroupChat实现多智能体对话和意图识别"""
 
@@ -50,7 +51,9 @@ class AIMessageHandler:
         if self.shared_vector_memory:
             logger.info("AIMessageHandler initialized with shared vector_memory.")
         else:
-            logger.warning("AIMessageHandler initialized without shared vector_memory. Knowledge base functionality will be limited.")
+            logger.warning(
+                "AIMessageHandler initialized without shared vector_memory. Knowledge base functionality will be limited."
+            )
 
         self._setup_api_keys()
         self.model_client = get_openai_client(model_info={"json_output": False})
@@ -63,8 +66,12 @@ class AIMessageHandler:
         """设置API密钥"""
         if settings.OPENAI_API_KEY:
             os.environ["OPENAI_API_KEY"] = settings.OPENAI_API_KEY
-        elif settings.AZURE_OPENAI_API_KEY and settings.AZURE_OPENAI_API_BASE: # Check for Azure keys
-            logger.info("Azure OpenAI API key found, assuming environment variables are set for AutoGen.")
+        elif (
+            settings.AZURE_OPENAI_API_KEY and settings.AZURE_OPENAI_API_BASE
+        ):  # Check for Azure keys
+            logger.info(
+                "Azure OpenAI API key found, assuming environment variables are set for AutoGen."
+            )
         else:
             logger.warning("未配置任何LLM API密钥，AI功能可能受限或无法使用")
 
@@ -80,17 +87,40 @@ class AIMessageHandler:
             conversation_id=self._current_conversation_id or "unknown_conversation",
         )
 
-    async def _process_weather_request_tool(self, *, city: str, days: int = 1) -> str:
+    async def _process_weather_request_tool(
+        self,
+        *,
+        city: str,
+        data_type: str = "current",
+        days: int | None = None,
+        hours: int | None = None,
+        dt: int | None = None,
+        date: str | None = None,
+    ) -> str:
         """天气查询工具薄封装，直接转调 `tools.weather.process_weather_request`。
 
         参数
         ----
-        city: 中文城市名。
-        days: 1=今日，7=未来 7 天。
+        city: 中文地区名称或者拼音城市名，例如 "杭州" 或 "Hangzhou"（首字母大写）。
+        data_type: 要查询的数据类型：`当前`current``|`分钟级`minutely``|`小时级`hourly``|`日级`daily``|`历史`historical``。
+        days: 当 ``data_type='daily'`` 时，返回天数 (1-7)。
+        hours: 当 ``data_type='hourly'`` 时，返回小时数 (1-48)。
+        dt: 当 ``data_type='historical'`` 时，Unix 时间戳（秒）。若提供则优先生效。
+        date: 当 ``data_type='historical'`` 时，也可直接传形如 ``YYYY-MM-DD`` 的日期字符串，工具内部转换为 00:00 (Asia/Shanghai) 对应 UTC 秒数。
+             二者同时提供时以 ``dt`` 优先。若均未提供则默认回溯 24 小时。
         """
-        logger.info(f"工具: _process_weather_request_tool 调用，city={city}, days={days}")
+        logger.info(
+            f"工具: _process_weather_request_tool 调用，city={city}, data_type={data_type}, days={days}, hours={hours}, dt={dt}, date={date}"
+        )
         try:
-            return await process_weather_request(city=city, days=days)
+            return await process_weather_request(
+                city=city,
+                data_type=data_type,
+                days=days,
+                hours=hours,
+                dt=dt,
+                date=date,
+            )
         except Exception as e:  # noqa: BLE001
             logger.error(f"天气查询工具调用失败: {e}")
             return f"❌ 无法获取天气信息: {e}"
@@ -103,7 +133,9 @@ class AIMessageHandler:
             system_message="你是一个知识库专家。如果用户的问题需要从知识库中查找答案，请调用`search_knowledge_base`工具，并使用用户原始提问作为查询参数。根据工具返回的结果回答用户。如果工具未返回有效信息，请告知用户知识库中没有相关内容。回答完毕后，请以'TERMINATE'结束你的回复。",
             description="知识库专家：当用户提问公司产品、文档、政策或历史数据等需要查阅内部资料的问题时，选择我。我会使用知识库工具查找答案。",
             model_client=self.model_client,
-            memory=[self.shared_vector_memory],  # Use shared vector memory as list per autogen v0.6 API
+            memory=[
+                self.shared_vector_memory
+            ],  # Use shared vector memory as list per autogen v0.6 API
         )
 
         self.server_admin_agent = AssistantAgent(
@@ -134,7 +166,7 @@ class AIMessageHandler:
              dify服务重启
              dify服务自动化升级
              系统运行状态查询
-             天气查询、支持近七天
+             天气查询、支持、当前、近七天、支持历史查询
             ```
             2. 数据技术知识查询
             3. JIRA需求提单：告诉用户提单格式要求：
@@ -173,7 +205,6 @@ class AIMessageHandler:
         )
 
         selectable_agents = [
-            # self.indent_agent,
             self.knowledge_expert_agent,
             self.server_admin_agent,
             self.jira_specialist_agent,
@@ -226,7 +257,11 @@ class AIMessageHandler:
 
             actual_final_message = None
             # 从容器中提取真正的最后一条消息
-            if hasattr(final_reply_container, 'messages') and isinstance(final_reply_container, TaskResult) and final_reply_container.messages:
+            if (
+                hasattr(final_reply_container, "messages")
+                and isinstance(final_reply_container, TaskResult)
+                and final_reply_container.messages
+            ):
                 actual_final_message = final_reply_container.messages[-1]
                 logger.info(f"SelectorGroupChat 从容器提取的实际最终消息: {actual_final_message}")
             else:
