@@ -8,7 +8,7 @@
 import asyncio
 import os
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 import uvicorn
 from dotenv import load_dotenv
@@ -70,6 +70,8 @@ async def lifespan(app: FastAPI):
     # 关闭钉钉客户端
     dingtalk_client.stop()
     scheduler_task.cancel()
+    with suppress(asyncio.CancelledError):
+        await scheduler_task
     thread_pool.shutdown(wait=False)
 
 
