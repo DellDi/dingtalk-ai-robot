@@ -139,8 +139,8 @@ class KnowledgeRetriever:
         tongyi_api_key: Optional[str] = None,
         tongyi_base_url: Optional[str] = None,
         embedding_dimensions: Optional[int] = DEFAULT_EMBEDDING_DIMENSIONS,
-        retrieve_k: int = 5,
-        retrieve_score_threshold: float = 0.4,
+        retrieve_k: int = 10,
+        retrieve_score_threshold: float = 0.2,
     ):
         """
         初始化知识库检索器。
@@ -219,22 +219,10 @@ class KnowledgeRetriever:
             self.vector_memory = ChromaDBVectorMemory(config=chroma_config)
             logger.info("ChromaDBVectorMemory已实例化。")
 
-            # 尝试添加一个虚拟条目以确保连接和集合创建成功
-            # AutoGen的ChromaDBVectorMemory的add方法是同步的。
-            # 我们需要确保这里的调用方式是合适的。
-            # MemoryContent的创建是同步的，add的调用也是同步的。
-            # 嵌入函数内部的异步转同步调用是这里的关键点。
-            logger.info("尝试添加初始化测试条目到向量内存...")
-            await self.vector_memory.add(
-                MemoryContent(
-                    content="系统初始化测试条目",
-                    mime_type=MemoryMimeType.TEXT,
-                    metadata={"source": "initialization"},
-                )
-            )
-            logger.info("初始化测试条目添加成功（或已存在）。")
-            # 如果需要，可以立即清除，但这通常用于测试连接
-            # self.vector_memory.clear()
+            # 以前这里会写入一条 "系统初始化测试条目" 用于连通性测试。
+            # 在持久化场景下，这条测试记录会反复累积并干扰召回。
+            # 因此自 v0.2.0 起取消该写入，只保留在日志中提示向量库连接已就绪。
+            logger.info("跳过写入初始化测试条目，向量库连接测试已通过初始化过程确认。")
 
             self.initialized = True
             logger.info("KnowledgeRetriever初始化完成。")
@@ -320,6 +308,10 @@ class KnowledgeRetriever:
             threshold if threshold is not None else self.retrieve_score_threshold
         )
 
+        # --------- 计算超额检索上限 --------- #
+        OVER_FETCH_FACTOR = 3  # 可根据需要调整 3~5
+        fetch_limit = k_to_use * OVER_FETCH_FACTOR
+
         try:
             # ChromaDBVectorMemory.query 为异步方法，直接 await 即可
             retrieved_memory_contents_obj = await self.vector_memory.query(
@@ -359,6 +351,8 @@ class KnowledgeRetriever:
                 logger.info(
                     f"No MemoryContent objects found in the query result for '{query_text[:50]}...'"
                 )
+                
+            logger.info(f"list_of_memory_content: {list_of_memory_content}, length: {len(list_of_memory_content)}")
 
             for mem_content in list_of_memory_content:
                 if not isinstance(mem_content, MemoryContent):
@@ -369,6 +363,20 @@ class KnowledgeRetriever:
 
                 score = mem_content.metadata.get("score") if mem_content.metadata else None
 
+                # ----- 新增：阈值 & 去重控制 ----- #
+                # 1. 过滤低于阈值的结果（以确保返回内容质量）
+                if score is not None and score < threshold_to_use:
+                    continue
+
+                # 2. 根据 metadata.id 去重，避免同一条记录因多次写入而重复出现
+                uniq_id = mem_content.metadata.get("id") if mem_content.metadata else None
+                if uniq_id and any(r.get("metadata", {}).get("id") == uniq_id for r in results):
+                    continue
+
+                # 3. 过滤掉历史遗留的初始化测试条目
+                if mem_content.metadata.get("source") == "initialization":
+                    continue
+
                 results.append(
                     {
                         "content": mem_content.content,
@@ -377,9 +385,23 @@ class KnowledgeRetriever:
                     }
                 )
 
+                # 4. 如果达到了超额获取上限，则提前结束循环
+                if len(results) >= fetch_limit:
+                    break
+            
             logger.info(
                 f"为查询 '{query_text[:50]}...' 检索到 {len(results)} 条结果 (k={k_to_use}, threshold={threshold_to_use})"
             )
+
+            # ------------------ 二次重排序（DashScope GTE-Rerank） ------------------ #
+            try:
+                from app.services.knowledge.reranker import rerank_documents  # 本地导入避免循环依赖
+
+                results = await rerank_documents(query_text, results, top_n=k_to_use)
+                
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(f"调用重排序失败，保留原始排序: {exc}")
+
             return results
         except Exception as e:
             logger.error(f"从ChromaDB检索文档时发生错误: {e}", exc_info=True)

@@ -9,11 +9,11 @@
 --------------
 1. **读取原始文本**：根据不同文件类型使用相应解析器获取纯文本。
 2. **自然段分割**：以“空行”作为段落分隔符，符合常见写作习惯，能够最大程度保留语义连贯性。
-3. **滑窗切片**：当段落超过 ``MAX_CHUNK_CHAR``（默认 1500 字符）时，采用窗口大小 ``WINDOW``
-  （默认 800 字符）且重叠 ``OVERLAP``（默认 200 字符）的滑动窗口算法继续细分，既满足嵌入模型
+3. **滑窗切片**：当段落超过 ``MAX_CHUNK_CHAR``（默认 2000 字符）时，采用窗口大小 ``WINDOW``
+  （默认 1200 字符）且重叠 ``OVERLAP``（默认 200 字符）的滑动窗口算法继续细分，既满足嵌入模型
   长度限制，也通过重叠区提供上下文衔接。
 
-所有阈值均可通过环境变量 `KR_CHUNK_MAX_CHAR`、`KR_SLIDE_WINDOW`、`KR_SLIDE_OVERLAP` 或
+所有阈值均可通过环境变量 `MAX_CHUNK_CHAR`、`WINDOW`、`OVERLAP` 或
 函数参数进行调整。
 
 文件 I/O 为阻塞操作，因此本模块保持同步实现，并在 FastAPI 端通过
@@ -41,9 +41,6 @@ from loguru import logger
 from app.core.config import settings
 
 # --------------------------- Config -----------------------------------------
-# MAX_CHUNK_CHAR = int(os.getenv("KR_CHUNK_MAX_CHAR", "1500"))
-# WINDOW = int(os.getenv("KR_SLIDE_WINDOW", "800"))
-# OVERLAP = int(os.getenv("KR_SLIDE_OVERLAP", "200"))
 MAX_CHUNK_CHAR = settings.MAX_CHUNK_CHAR
 WINDOW = settings.WINDOW
 OVERLAP = settings.OVERLAP
@@ -120,11 +117,11 @@ _READERS = {
 
 
 def extract_chunks(file_path: Path, base_metadata: Dict[str, str] | None = None) -> List[Dict]:
-    """Parse *file_path* and return list of dicts with ``content`` & ``metadata``.
+    """解析 *file_path* 并返回包含 ``content`` 和 ``metadata`` 的字典列表。
 
-    base_metadata will be merged into each chunk's metadata with extra fields:
-    ``source`` (filename), ``chunk_id`` (idx), and for pdf/docx page numbers if available
-    (not implemented yet – future work).
+    base_metadata 将与每个分块的元数据合并，并添加以下额外字段：
+    ``source``（文件名）、``chunk_id``（索引），以及 PDF/DOCX 的页码（如果可用）
+    （尚未实现 - 待开发）。
     """
     suffix = file_path.suffix.lower()
     if suffix not in _READERS:

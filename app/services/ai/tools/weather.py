@@ -68,7 +68,6 @@ async def _fetch_weather(lat: float, lon: float, api_key: str, *, dt: int | None
     async with httpx.AsyncClient(timeout=10) as client:
         endpoint = OWM_TIMEMACHINE_URL if dt is not None else OWM_ONECALL_URL
         r = await client.get(endpoint, params=params)
-        logger.debug(f"[WeatherTool] Weather response status={r.status_code}, body={r.text[:300]}")
         r.raise_for_status()
         return r.json()
 
@@ -186,8 +185,6 @@ async def process_weather_request(
         raise WeatherAPIError(str(exc)) from exc
 
     sections: List[str] = [f"## {city_cn} 天气 - {data_type.capitalize()}\n"]
-
-    logger.debug(f"WeatherTool: weather_data={weather_data}")
 
     if data_type == "current":
         sections.append(_format_current(weather_data["current"]))

@@ -33,6 +33,7 @@ class SearchRequest(BaseModel):
     """知识库搜索请求模型"""
     query: str = Field(..., description="搜索查询文本")
     top_k: int = Field(5, description="返回的最大结果数量")
+    min_score: float | None = Field(default=0.3, description="相似度阈值 (0-1)，留空则使用后端默认值")
 
 
 class SearchResponse(BaseModel):
@@ -73,8 +74,9 @@ async def search_knowledge(
     """
     try:
         search_results = await retriever.search(
-            query_text=request_data.query, 
-            k=request_data.top_k
+            query_text=request_data.query,
+            k=request_data.top_k,
+            threshold=request_data.min_score,
         )
         return SearchResponse(success=True, message="搜索成功", results=search_results)
     except Exception as e:

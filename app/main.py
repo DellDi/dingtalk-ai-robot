@@ -34,12 +34,14 @@ async def lifespan(app: FastAPI):
     """
     # 启动时执行
     logger.info("🚀 启动钉钉机器人服务")
-    
+
     # 初始化 KnowledgeRetriever
     logger.info("🧠 初始化知识库检索器...")
     knowledge_retriever = KnowledgeRetriever(
-        collection_name=settings.CHROMA_DEFAULT_COLLECTION_NAME, 
-        persistence_path=settings.VECTOR_DB_PATH
+        collection_name=settings.CHROMA_DEFAULT_COLLECTION_NAME,
+        persistence_path=settings.VECTOR_DB_PATH,
+        retrieve_k=settings.CHROMA_DEFAULT_K,
+        retrieve_score_threshold=settings.CHROMA_DEFAULT_SCORE_THRESHOLD,
     )
     await knowledge_retriever.initialize()
     if knowledge_retriever.initialized:
@@ -54,15 +56,15 @@ async def lifespan(app: FastAPI):
     loop = asyncio.get_event_loop()
     # 正确调用钩钩客户端的start_forever方法
     dingtalk_future = loop.run_in_executor(thread_pool, dingtalk_client.stream_client.start_forever)
-    
+
     # 启动定时任务
     scheduler_task = asyncio.create_task(start_scheduler())
-    
+
     yield
-    
+
     # 关闭时执行
     logger.info("🔄 关闭钉钉机器人服务")
-    
+
     # 关闭 KnowledgeRetriever
     if hasattr(app.state, 'knowledge_retriever') and app.state.knowledge_retriever:
         logger.info("🚪 关闭知识库检索器...")

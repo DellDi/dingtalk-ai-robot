@@ -245,6 +245,33 @@ overlap=<可选，默认 200>
 
 > 📌 默认切片策略为 **自然段 + 滑窗**，可通过 `chunk_size / overlap` 覆盖。
 
+## 🔍 知识库检索接口 (`/knowledge/search`)
+
+```http
+POST /api/v1/knowledge/search
+Content-Type: application/json
+
+{
+  "query": "曾迪是谁？",
+  "top_k": 5,          // 期望最终返回结果条数
+  "min_score": 0.15    // 可选，相似度阈值，留空则使用后端默认 0.2
+}
+```
+
+处理流程 👇
+
+1. **向量召回 (Over-Fetch)**：后端会以 `top_k × 3` 的倍数（可配置）从 ChromaDB 取候选，且底层阈值极低，确保召回足够全面。
+2. **二次重排 (Re-Rank)**：调用阿里云 DashScope `gte-rerank-v2` 对候选进行相关性打分，字段 `rerank_score` 可在调试阶段通过日志查看。
+3. **结果截断**：按重排得分降序，取前 `top_k` 条返回给调用方。
+
+### 新增环境变量
+
+| 变量名            | 说明                                  |
+|-------------------|---------------------------------------|
+| `DASHSCOPE_API_KEY` | DashScope 服务访问密钥（若缺省将回退 `OPENAI_API_KEY`） |
+
+> **提示**：若想关闭重排序，可不配置 `DASHSCOPE_API_KEY`，系统会自动跳过该步骤，仅用向量相似度排序。
+
 ## ⚙️ LLM 配置注意事项
 
 自 **AutoGen 0.6+** 起，若一次对话中包含多条且不连续的 *system* prompt，需要在 `model_info` 中显式开启：
