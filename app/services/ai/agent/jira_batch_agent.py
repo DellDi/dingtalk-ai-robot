@@ -2,7 +2,7 @@ import json
 import os
 import re
 import asyncio
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, TypedDict
 from loguru import logger
 
 from autogen_core import CancellationToken
@@ -16,6 +16,14 @@ from autogen_agentchat.ui import Console
 from app.db_utils import get_jira_account, save_jira_account
 from app.services.ai.tools.jira_bulk_creator import JiraTicketCreator
 from app.services.ai.openai_client import get_openai_client
+
+
+# ---- TypedDict for input payload ---- #
+
+class JiraInput(TypedDict):
+    text: str
+    sender_id: list
+    conversation_id: str
 
 
 class JiraAccountAgent:
@@ -166,7 +174,7 @@ class JiraBatchAgent:
    - **对象结构：**
      - `title`: `string` - 必填。包含客户信息的总标题部分。
      - `customerName`: `string` - 必填。客户名称
-     - `description`: `string` - 必填。包含【功能描述】和【实现路径】两部分的信息内容。
+     - `description`: `string` - 必填。包含【功能描述】和【实现路径】两部分的信息内容，要包含换行符。
 
 2. **富文本识别处理能力：**
    - 你具有富文本识别处理提取的能力。当原始文本中出现富文本渲染的链接（例如 Markdown 链接 `[文本](链接)` 或其他类似的富文本语法）时，请务必完整地识别并提取到 `description` 属性中。
@@ -175,7 +183,7 @@ class JiraBatchAgent:
 ### 文本分割规则：
 - 每个独立的数据对象通常由 `---` 分隔。
 - `title` 是紧随分隔符后的第一行内容，通常以 `【` 开头并以 `】` 结尾。
-- `description` 包含 `【功能描述】` 和 `【实现路径】` 两部分的内容，直到下一个 `---` 分隔符或者文本结束。
+- `description` 包含 `【功能描述】` 和 `【实现路径】` 两部分的内容，要包含换行符，直到下一个 `---` 分隔符或者文本结束。
 - `customerName`: `string` - 必填。客户名称 （运用自然语言处理技术，准确判断并提取客户名、自动忽略非客户名称的干扰信息、客户名称要尽可能准确、精炼，最好去除地区名称或者性质描述。提取客户名称可以适当的简化，比如：江西乐奥==>乐奥、乐奥物业===》乐奥、乐奥集团==>乐奥）
 
 ### 注意和要求规范：
@@ -214,7 +222,7 @@ class JiraBatchAgent:
             termination_condition=self.termination_condition,
         )
 
-    async def process(self, input: {"text": str, "sender_id": list, "conversation_id": str}) -> str:
+    async def process(self, input: JiraInput) -> str:
         logger.info(f"开始为用户 {input.get('sender_id')} 处理Jira批量代理请求: {input.get('text')[:100]}...")
         text = input.get("text")
         user_list = input.get("sender_id")
@@ -276,11 +284,11 @@ class JiraBatchAgent:
     def _extract_json_from_text(self, text: str) -> Optional[List[Dict[str, Any]]]:
         """尝试从文本中提取JSON数组。"""
         try:
-            # Try to find the outermost JSON structure, which should be a list for jiraList
-            # A more robust way might be to look for "jiraList": [...]
-            # For now, assume the relevant JSON list is the first top-level list found.
+            # 尝试找到最外层的JSON结构，应该是jiraList的列表
+            # 更健壮的方式可能是查找 "jiraList": [...]
+            # 目前假设相关的JSON列表是找到的第一个顶层列表
 
-            # Handle cases where JSON might be embedded within other text or markdown code blocks
+            # 处理JSON可能嵌入在其他文本或markdown代码块中的情况
             match = re.search(r'```json\s*([\s\S]*?)\s*```', text, re.DOTALL)
             if match:
                 json_str = match.group(1).strip()
@@ -310,11 +318,11 @@ class JiraBatchAgent:
                     logger.warning(f"发现jiraList密钥，但其值不是一个列表： {type(jira_list)}")
                     return None
             elif isinstance(parsed_data, list): # pragma: no cover
-                # Fallback if the agent directly returns a list instead of {"jiraList": [...] }
-                logger.warning("解析的JSON提取是一个清单，但期望与“jiraList”的命令。试图直接使用列表。")
+                # 如果智能体直接返回列表而不是 {"jiraList": [...]} 格式时的回退处理
+                logger.warning("解析的JSON提取是一个清单，但期望与 'jiraList' 的键。试图直接使用列表。")
                 return parsed_data # This might happen if the LLM doesn't follow instructions perfectly
             else: # pragma: no cover
-                logger.warning(f"解析的JSON不是“jiraList”或直接列表的命令： {text[:200]}...")
+                logger.warning(f"解析的JSON既不是包含 'jiraList' 键的对象，也不是直接的列表: {text[:200]}...")
                 return None
 
         except json.JSONDecodeError: # pragma: no cover
@@ -338,8 +346,8 @@ class JiraBatchAgent:
             logger.error("JiraBatchAgent: 团队处理失败或未返回任何消息。")
             return []
 
-        # The validator agent is the last one. Its message (N-1) should contain the JSON.
-        # The very last message (N) from validator is "VALID_JSON" or "FIXED_JSON..."
+        # 验证器智能体是最后一个。它的倒数第二条消息(N-1)应该包含JSON内容。
+        # 验证器的最后一条消息(N)应该是"VALID_JSON"或"FIXED_JSON..."这样的状态标记
         final_validator_status_message = task_result_message.messages[-1]
 
         if not isinstance(final_validator_status_message, TextMessage) or not final_validator_status_message.content:
@@ -348,8 +356,8 @@ class JiraBatchAgent:
 
         logger.debug(f"JiraBatchAgent: 验证器状态消息内容: {final_validator_status_message.content[:100]}")
 
-        # The actual JSON content should be in the message *before* the validator's final status message
-        # This message comes from the parameter_extractor_agent (or json_validator_agent if it fixed it)
+        # 实际的JSON内容应该在验证器最终状态消息的前一条消息中
+        # 这条消息来自参数提取智能体(parameter_extractor_agent)，或者如果JSON被修复过，则来自JSON验证智能体(json_validator_agent)
         if len(task_result_message.messages) < 2: # pragma: no cover
             logger.error("JiraBatchAgent: 消息列表不足，无法提取JSON内容。")
             return []
