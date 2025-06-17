@@ -13,15 +13,18 @@ from contextlib import asynccontextmanager, suppress
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI
-from loguru import logger
 
 from app.core.config import settings
 from app.core.dingtalk_client import DingTalkClient
+from app.core.logger import setup_logging
 from app.core.scheduler import start_scheduler
 from app.services.knowledge.retriever import KnowledgeRetriever # 新增导入
 
 # 加载环境变量
 load_dotenv()
+
+# 初始化日志系统
+setup_logging()
 
 # 创建线程池
 thread_pool = ThreadPoolExecutor(max_workers=5)
@@ -33,6 +36,7 @@ async def lifespan(app: FastAPI):
     应用生命周期管理
     """
     # 启动时执行
+    from loguru import logger
     logger.info("🚀 启动钉钉机器人服务")
 
     # 初始化 KnowledgeRetriever
@@ -52,7 +56,7 @@ async def lifespan(app: FastAPI):
         logger.error("❌ 知识库检索器初始化失败！")
 
     # 启动钉钉客户端（在单独线程中运行）
-    dingtalk_client = DingTalkClient(knowledge_retriever=app.state.knowledge_retriever) 
+    dingtalk_client = DingTalkClient(knowledge_retriever=app.state.knowledge_retriever)
     loop = asyncio.get_event_loop()
     # 正确调用钩钩客户端的start_forever方法
     dingtalk_future = loop.run_in_executor(thread_pool, dingtalk_client.stream_client.start_forever)

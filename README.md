@@ -16,6 +16,7 @@ sequenceDiagram
     participant Ticket as 工单系统
     participant JIRA as JIRA平台
     participant Server as 服务器系统
+    participant Logger as 日志系统
 
     User->>Bot: 发送消息
 
@@ -66,6 +67,11 @@ sequenceDiagram
         AI->>Bot: 返回分析结果
         Bot->>User: 展示日报/周报
     end
+
+    %% 日志记录流程
+    Bot->>Logger: 记录操作日志
+    Logger->>Logger: 自动轮转和清理
+    Logger->>Bot: 提供日志统计
 ```
 
 ### 核心功能
@@ -101,10 +107,17 @@ sequenceDiagram
    - 每周五根据本周的每天的日报，生成本周的周报（AI智能分析）
    - 生成后定时定点推送
 
+8. **日志管理系统**
+   - 自动日志轮转（10MB轮转）
+   - 定期清理（保留7天）
+   - 分级记录（主日志+错误日志）
+   - API管理接口
+
 ## 🛠️ 技术架构
 
 - **后端框架**：FastAPI
 - **智能体引擎**：Microsoft AutoGen
+- **日志系统**：Loguru + 自动轮转
 - **依赖管理**：uv (Python包管理工具)
 - **开发环境**：Python 3.12+
 - **平台集成**：钉钉开放平台、JIRA API、OpenWeather API
@@ -136,7 +149,14 @@ uv pip compile pyproject.toml -o requirements.txt
 pip install -r requirements.txt
 ```
 
-3. 配置环境变量
+3. 初始化日志目录
+
+```bash
+# 初始化日志目录结构
+python scripts/init_logs.py
+```
+
+4. 配置环境变量
 
 创建`.env`文件，参考`.env.example`中的示例，配置必要的环境变量。
 
@@ -167,13 +187,26 @@ python -m app.main
 5. **JIRA管理**：系统自动执行定时检查
 6. **服务器维护**：使用指定命令触发服务器操作
 
+### 日志管理
+
+1. **查看日志统计**：`GET /api/logs/stats`
+2. **手动清理日志**：`POST /api/logs/cleanup`
+3. **健康检查**：`GET /api/logs/health`
+
 ## 🧩 项目结构
 
 ```
 dingtalk-ai-robot/
 ├── app/                    # 主应用目录
 │   ├── api/                # API端点
+│   │   ├── v1/             # API版本1
+│   │   │   ├── logs.py     # 日志管理API
+│   │   │   └── ...         # 其他API模块
+│   │   └── router.py       # 主路由
 │   ├── core/               # 核心配置和功能
+│   │   ├── logger.py       # 日志配置模块
+│   │   ├── scheduler.py    # 定时任务调度器
+│   │   └── ...             # 其他核心模块
 │   ├── services/           # 服务模块
 │   │   ├── ai/             # AI智能体
 │   │   │   ├── agent/      # 智能体实现
@@ -190,6 +223,15 @@ dingtalk-ai-robot/
 │   │   ├── ssh/            # SSH服务
 │   │   └── weather/        # 天气服务
 │   └── main.py             # 应用入口
+├── logs/                   # 日志目录
+│   ├── .gitkeep           # 保持目录结构
+│   ├── .gitignore         # 忽略日志文件
+│   ├── app.log            # 主日志文件
+│   └── error.log          # 错误日志文件
+├── scripts/                # 脚本目录
+│   └── init_logs.py       # 日志目录初始化脚本
+├── docs/                   # 文档目录
+│   └── logging-system-flow.md # 日志系统流程图
 ├── tests/                  # 测试目录
 ├── .env.example            # 环境变量示例
 ├── pyproject.toml          # 项目配置和依赖

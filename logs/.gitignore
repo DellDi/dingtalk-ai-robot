@@ -1,0 +1,7 @@
+# 忽略所有日志文件
+*.log
+*.log.*
+*.zip
+
+# 但保留 .gitkeep 文件
+!.gitkeep

@@ -11,6 +11,7 @@ from datetime import datetime
 import schedule
 from loguru import logger
 
+from app.core.logger import cleanup_logs
 from app.services.jira.tasks import check_jira_tasks_compliance
 
 
@@ -33,6 +34,9 @@ async def start_scheduler():
     schedule.every().friday.at("10:00").do(lambda: asyncio.create_task(check_jira_tasks_compliance()))
     schedule.every().friday.at("16:00").do(lambda: asyncio.create_task(check_jira_tasks_compliance()))
 
+    # 每天凌晨2点清理过期日志文件
+    schedule.every().day.at("02:00").do(lambda: asyncio.create_task(cleanup_logs_task()))
+
     # 运行调度器
     try:
         while True:
@@ -45,3 +49,15 @@ async def start_scheduler():
     except Exception as e:
         logger.error(f"定时任务调度器异常: {e}")
         raise
+
+
+async def cleanup_logs_task():
+    """
+    日志清理任务
+    """
+    try:
+        logger.info("🧹 开始执行定时日志清理任务...")
+        cleanup_logs()
+        logger.info("✅ 定时日志清理任务完成")
+    except Exception as e:
+        logger.error(f"❌ 定时日志清理任务失败: {e}")
