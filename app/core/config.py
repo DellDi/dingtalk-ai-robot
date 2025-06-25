@@ -46,7 +46,7 @@ class Settings(BaseSettings):
         default="text-embedding-v4", description="通义千问嵌入模型名称"
     )
     TONGYI_EMBEDDING_API_ENDPOINT: str = Field(
-        default="https://dashscope.aliyuncs.com/compatible-mode/v1", 
+        default="https://dashscope.aliyuncs.com/compatible-mode/v1",
         description="通义千问OpenAI兼容模式的Base URL"
     )
     VECTOR_DB_TYPE: str = Field("chroma", description="向量数据库类型")
@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     CHROMA_DEFAULT_COLLECTION_NAME: str = Field(default="global_knowledge_base", description="ChromaDB默认集合名称")
     CHROMA_DEFAULT_K: int = Field(default=20, description="ChromaDB默认返回结果数量")
     CHROMA_DEFAULT_SCORE_THRESHOLD: float = Field(default=0.2, description="ChromaDB默认相似度阈值")
-    
+
     # 文档切片配置
     MAX_CHUNK_CHAR: int = Field(default=1500, description="最大分块字符数")
     WINDOW: int = Field(default=800, description="窗口大小")
@@ -62,6 +62,7 @@ class Settings(BaseSettings):
 
     # SSH配置
     SSH_HOSTS: Optional[str] = Field(None, description="SSH主机列表，逗号分隔")
+    SSH_DEFAULT_HOST: Optional[str] = Field(None, description="默认SSH主机地址")
     SSH_USERNAME: Optional[str] = Field(None, description="SSH用户名")
     SSH_KEY_PATH: Optional[str] = Field(None, description="SSH密钥路径")
     SSH_PASSWORD: Optional[str] = Field(None, description="SSH密码（不推荐）")

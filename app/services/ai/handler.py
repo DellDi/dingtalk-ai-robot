@@ -25,6 +25,7 @@ from app.services.ai.tools import (
     process_weather_request,
     search_knowledge_base,
     process_jira_request,
+    process_ssh_request,
 )
 
 
@@ -87,6 +88,28 @@ class AIMessageHandler:
             conversation_id=self._current_conversation_id or "unknown_conversation",
         )
 
+    async def _process_ssh_request_tool(
+        self,
+        request_text: str,
+        host: str = None,
+        mode: str = "free"
+    ) -> str:
+        """SSH请求工具（薄封装，实际逻辑在 tools.ssh）"""
+        # 使用配置中的默认主机或用户指定的主机
+        target_host = host or settings.SSH_DEFAULT_HOST or "default-server"
+        logger.info(f"工具: _process_ssh_request_tool 调用，request_text={request_text}, host={target_host}, mode={mode}")
+        try:
+            return await process_ssh_request(
+                request_text,
+                target_host,
+                mode=mode,
+                sender_id=self._current_sender_id or "unknown_sender",
+                conversation_id=self._current_conversation_id or "unknown_conversation",
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"SSH请求工具调用失败: {e}")
+            return f"❌ 无法执行SSH操作: {e}"
+
     async def _process_weather_request_tool(
         self,
         *,
@@ -140,9 +163,27 @@ class AIMessageHandler:
 
         self.server_admin_agent = AssistantAgent(
             name="ServerAdmin",
-            system_message="你是一个服务器管理专家。负责回答关于服务器操作、Dify服务管理、SSH连接、日志分析等问题。请提供建议和信息，不要实际执行任何服务器命令。回答完毕后，请以'TERMINATE'结束你的回复。",
-            description="服务器管理专家：当用户咨询服务器维护、Dify平台管理、SSH操作或日志分析等技术问题时，选择我。",
+            system_message="""你是一个服务器管理专家。负责处理服务器操作、Dify服务管理、SSH连接、日志分析等问题。
+
+            当用户请求涉及以下内容时，必须调用`_process_ssh_request_tool`工具：
+            1. 查看服务器状态（磁盘、内存、进程等）
+            2. 执行服务器命令
+            3. Dify服务升级或维护
+
+            工具参数说明：
+            - request_text: 用户原始请求文本
+            - host: 目标主机地址（默认为配置中的SSH_DEFAULT_HOST）
+            - mode: 操作模式 (free/upgrade)
+
+            特别注意：
+            - 对于明确的Dify升级请求，必须使用mode='upgrade'
+            - 其他SSH操作使用mode='free'
+            - 不要直接给出建议，必须调用工具获取实际执行结果
+
+            回答完毕后，请以'TERMINATE'结束你的回复。""",
+            description="服务器管理专家：当用户咨询服务器维护、Dify平台管理、SSH操作或日志分析等技术问题时，选择我。我会实际执行相关命令。",
             model_client=self.model_client,
+            tools=[self._process_ssh_request_tool],
         )
 
         self.jira_specialist_agent = AssistantAgent(

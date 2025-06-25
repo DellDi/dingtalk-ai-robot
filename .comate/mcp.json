@@ -1,0 +1,28 @@
+{
+    "mcpServers": {
+        "sequential-thinking": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "@modelcontextprotocol/server-sequential-thinking"
+            ]
+        },
+        "excel": {
+            "command": "uvx",
+            "args": [
+                "excel-mcp-server",
+                "stdio"
+            ]
+        },
+        "context7": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "@upstash/context7-mcp"
+            ],
+            "env": {
+                "DEFAULT_MINIMUM_TOKENS": "6000"
+            }
+        }
+    }
+}
