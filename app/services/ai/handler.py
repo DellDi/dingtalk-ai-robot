@@ -67,12 +67,6 @@ class AIMessageHandler:
         """设置API密钥"""
         if settings.OPENAI_API_KEY:
             os.environ["OPENAI_API_KEY"] = settings.OPENAI_API_KEY
-        elif (
-            settings.AZURE_OPENAI_API_KEY and settings.AZURE_OPENAI_API_BASE
-        ):  # Check for Azure keys
-            logger.info(
-                "Azure OpenAI API key found, assuming environment variables are set for AutoGen."
-            )
         else:
             logger.warning("未配置任何LLM API密钥，AI功能可能受限或无法使用")
 
@@ -167,7 +161,7 @@ class AIMessageHandler:
 
             当用户请求涉及以下内容时，必须调用`_process_ssh_request_tool`工具：
             1. 查看服务器状态（磁盘、内存、进程等）
-            2. 执行服务器命令
+            2. 需要操作服务器，执行相关的服务器命令的时候
             3. Dify服务升级或维护
 
             工具参数说明：
