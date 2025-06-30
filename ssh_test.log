@@ -1,9 +1,0 @@
-2025-06-25 23:32:36.543 | INFO     | __main__:test:11 - 开始SSH工具测试
-2025-06-25 23:32:36.543 | DEBUG    | __main__:test:19 - 测试自由模式...
-2025-06-25 23:32:36.543 | INFO     | app.services.ssh.client:connect:54 - 连接到SSH服务器: example.com
-2025-06-25 23:32:36.543 | ERROR    | app.services.ssh.client:connect:91 - SSH连接失败: 未提供密钥或密码
-2025-06-25 23:32:36.543 | INFO     | __main__:test:21 - 自由模式测试结果: ❌ 无法连接到主机 example.com
-2025-06-25 23:32:36.543 | DEBUG    | __main__:test:24 - 测试一键升级模式...
-2025-06-25 23:32:36.543 | INFO     | app.services.ssh.client:connect:54 - 连接到SSH服务器: example.com
-2025-06-25 23:32:36.543 | ERROR    | app.services.ssh.client:connect:91 - SSH连接失败: 未提供密钥或密码
-2025-06-25 23:32:36.544 | INFO     | __main__:test:26 - 一键升级模式测试结果: ❌ 无法连接到主机 example.com

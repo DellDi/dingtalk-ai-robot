@@ -7,6 +7,8 @@ SSH工具模块，支持自由模式和一键升级模式
 import re
 from typing import Dict, Any, List
 from autogen_agentchat.agents import AssistantAgent
+from autogen_agentchat.messages import TextMessage
+
 from loguru import logger
 from pydantic import json_schema
 
@@ -106,7 +108,6 @@ async def _extract_command_intent(text: str) -> str:
 
     prompt = f"""
     你是一个Linux系统管理员，需要根据用户请求生成合适的SSH命令。
-    用户请求: {text}
 
     请遵循以下规则:
     1. 只返回可直接执行的命令，不要包含任何解释
@@ -125,8 +126,13 @@ async def _extract_command_intent(text: str) -> str:
             description="一个专门用于生成SSH命令的AI智能助手，你的回复必须是一个可执行的Linux命令，且不需要解释",
             model_client=client,
         )
-        response = await ssh_agent.generate_text(prompt, max_tokens=50)
-        return response.strip()
+        # response = await ssh_agent.generate_text(prompt, max_tokens=50)
+        messages = [TextMessage(content=text, source="user")]
+        chat_res = await ssh_agent.run(task=messages)
+        logger.info(f"参数提取智能体响应: {chat_res}")
+        if not chat_res:
+            return "⚠️ 无法从您的请求中提取有效命令，请更明确地说明您想执行的操作"
+        return chat_res.messages[-1].content.strip()  # 返回最后一条消息内容
     except Exception as e:
         logger.error(f"AI命令生成失败: {e}")
         return text.strip()  # 失败时返回原始文本
