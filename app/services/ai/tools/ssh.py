@@ -5,12 +5,12 @@ SSH工具模块，支持自由模式和一键升级模式
 """
 
 import re
+import asyncio
 from typing import Dict, Any, List
 from autogen_agentchat.agents import AssistantAgent
 from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_agentchat.messages import TextMessage
 from autogen_agentchat.conditions import MaxMessageTermination, TextMentionTermination
-
 from loguru import logger
 from pydantic import json_schema
 
@@ -56,130 +56,126 @@ async def _process_free_mode(request_text: str, host: str) -> str:
 
 
 async def _process_with_command_team(request_text: str, host: str) -> str:
-    """使用RoundRobinGroupChat智能命令处理团队"""
+    """使用两阶段执行模式处理SSH命令请求，避免重复执行"""
     try:
         logger.info(f"[SSH-COMMAND-TEAM] 开始处理请求: {request_text}")
         
         # 创建模型客户端
         client = get_openai_client(model_info={"json_output": False})
         
-        # 第一个智能体：命令生成器
-        command_generator = AssistantAgent(
-            name="CommandGenerator",
-            system_message="""你是一个Linux命令生成专家。根据用户请求生成合适的Linux命令。
+        # 第一阶段：命令规划阶段 - 使用多角色思考模式整合原有的命令审查和矫正功能
+        command_planner = AssistantAgent(
+            name="CommandPlanner",
+            system_message=f"""你是一个Linux命令规划专家，负责根据用户请求生成最合适的命令。你需要扮演三个角色：命令生成器、安全审查官和命令优化师，按顺序完成命令处理流程。
 
-重要规则：
-1. 只返回可直接在远程主机上执行的Linux命令，不要包含ssh连接命令
-2. 不要包含ssh、ssh://等连接前缀，因为我们已经在SSH会话内部
-3. 确保命令安全，不要执行危险操作
-4. 优先使用标准Linux命令
-5. 如果需要sudo权限，请明确添加sudo
-6. 生成命令后，在末尾添加 NEXT_AGENT
+【角色1：命令生成器】
+首先，分析用户请求，生成能满足需求的Linux命令。确保：
+- 只生成可直接在远程主机上执行的命令
+- 不包含ssh连接前缀
+- 如需sudo权限，明确添加sudo
+- 优先使用标准Linux命令
 
-正确示例：
-uptime && free -h && df -h
-NEXT_AGENT
+【角色2：安全审查官】
+然后，审查生成的命令是否存在以下安全风险：
+- 交互式命令（需要用户输入或持续交互）
+- 长时间运行或可能挂起的命令
+- 等待用户确认的命令
+- 进入特殊模式的命令（如编辑器、分页器）
+- 潜在的危险操作（删除系统文件、修改关键配置等）
+- 资源密集型操作（可能导致服务器负载过高）
 
-错误示例（不要这样做）：
-ssh user@host uptime
-ssh://user@host/command
-NEXT_AGENT""",
+【角色3：命令优化师】
+最后，如果发现安全问题，优化命令使其安全可执行：
+- 交互式查看 → 一次性输出（如 top -bn1 代替 top）
+- 持续监控 → 快照查看（如 ps aux | grep <进程> 代替 watch）
+- 编辑操作 → 查看操作（如 cat 代替 vim/nano）
+- 分页显示 → 直接输出（如 cat 代替 less/more）
+- 添加适当的限制参数（如 head、tail、timeout）
+- 对于耗时操作，添加资源限制（如 nice、ionice）
+
+请按照以下结构返回JSON格式的分析结果：
+```json
+{{
+  "user_intent": "用户意图的详细描述",
+  "initial_command": "初始生成的命令",
+  "safety_analysis": "安全分析结果，详细说明潜在问题",
+  "command": "最终优化后的安全命令",
+  "reasoning": "命令选择和优化的详细理由",
+  "estimated_runtime": "预估运行时间（秒）",
+  "potential_issues": ["可能存在的问题列表"]
+}}
+```
+
+重要提示：
+1. 对于主机 {host} 上的命令，必须确保命令不会挂起或需要用户交互
+2. 对于可能长时间运行的命令，添加适当的限制（如 timeout 命令）
+3. 对于需要查看大量输出的命令，添加适当的过滤（如 head、grep）
+4. 对于系统状态监控，优先使用一次性快照而非持续监控
+5. 始终提供详细的安全分析，即使命令看起来是安全的
+""",
             model_client=client,
         )
         
-        # 第二个智能体：命令安全分析师
-        command_analyzer = AssistantAgent(
-            name="CommandAnalyzer",
-            system_message="""你是一个命令安全分析专家。分析上一个智能体生成的命令是否存在以下问题：
-
-分析维度：
-1. 是否为交互式命令（需要用户输入或持续交互）
-2. 是否可能长时间运行或挂起
-3. 是否会等待用户确认
-4. 是否会进入特殊模式（如编辑器、分页器）
-
-如果命令安全可执行，回复：
-SAFE_COMMAND
-NEXT_AGENT
-
-如果发现问题，详细说明问题并回复：
-PROBLEMATIC_COMMAND: [具体问题描述]
-NEXT_AGENT""",
-            model_client=client,
-        )
+        # 第一阶段：获取命令规划结果
+        planning_result = await planning_phase(command_planner, request_text)
+        if not planning_result:
+            return "❌ 命令规划失败，无法生成有效命令"
+            
+        # 提取计划好的命令
+        try:
+            import json
+            # 解析JSON结果
+            command_data = json.loads(planning_result)
+            command_to_execute = command_data.get("command", "")
+            if not command_to_execute:
+                return "❌ 命令规划结果无效，未找到可执行命令"
+                
+            logger.info(f"[SSH-COMMAND-TEAM] 规划阶段生成命令: {command_to_execute}")
+        except json.JSONDecodeError:
+            # 如果JSON解析失败，尝试直接从文本中提取命令
+            match = re.search(r'"command"\s*:\s*"([^"]+)"', planning_result)
+            if match:
+                command_to_execute = match.group(1)
+                logger.info(f"[SSH-COMMAND-TEAM] 从文本提取命令: {command_to_execute}")
+            else:
+                return "❌ 无法从规划结果中提取命令"
         
-        # 第三个智能体：命令优化器
-        command_optimizer = AssistantAgent(
-            name="CommandOptimizer",
-            system_message="""你是一个命令优化专家。根据前面智能体的分析结果：
-
-如果命令被标记为SAFE_COMMAND：
-- 直接使用原命令
-- 回复格式：[原命令]
-EXECUTE_COMMAND
-
-如果命令被标记为PROBLEMATIC_COMMAND：
-- 分析用户的真实意图
-- 提供功能等效但安全的替代命令
-- 确保替代命令能达到相同目的但不会挂起
-
-替代策略：
-- 交互式查看 → 一次性输出
-- 持续监控 → 快照查看
-- 编辑操作 → 查看操作
-- 分页显示 → 直接输出
-
-回复格式：[优化后的安全命令]
-EXECUTE_COMMAND""",
-            model_client=client,
-        )
+        # 第二阶段：命令执行阶段 - 直接执行命令并返回结果
+        logger.info(f"[SSH-COMMAND-TEAM] 执行命令: {command_to_execute}")
+        timeout = await _smart_timeout_detection(command_to_execute)
+        execution_result = await _execute_ssh_command(host, command_to_execute, timeout)
         
-        # 第四个智能体：命令执行器
-        async def execute_command_tool(command: str) -> str:
-            """执行SSH命令的工具函数"""
-            logger.info(f"[SSH-COMMAND-TEAM] 执行命令: {command}")
-            # 智能设置超时时间
-            timeout = await _smart_timeout_detection(command.strip())
-            return await _execute_ssh_command(host, command.strip(), timeout)
+        return execution_result
         
-        command_executor = AssistantAgent(
-            name="CommandExecutor",
-            system_message=f"""你是一个命令执行专家。执行上一个智能体优化后的安全命令。
+    except Exception as e:
+        logger.error(f"[SSH-COMMAND-TEAM] 处理异常: {e}")
+        return f"❌ 命令处理异常: {str(e)}"
 
-你的任务：
-1. 从上一个智能体的消息中提取要执行的命令（EXECUTE_COMMAND之前的内容）
-2. 调用execute_command_tool工具在主机 {host} 上执行该命令
-3. 将工具返回的完整结果直接输出给用户，不要修改或总结
 
-重要：直接返回工具执行的原始结果，然后添加 TERMINATE""",
-            model_client=client,
-            tools=[execute_command_tool],
-        )
+async def planning_phase(planner: AssistantAgent, request_text: str) -> str:
+    """命令规划阶段，使用单个智能体生成并优化命令"""
+    try:
+        # 创建初始消息
+        messages = [TextMessage(content=request_text, source="user")]
         
-        # 创建RoundRobinGroupChat团队
-        team = RoundRobinGroupChat(
-            participants=[command_generator, command_analyzer, command_optimizer, command_executor],
-            termination_condition=TextMentionTermination("TERMINATE") | MaxMessageTermination(15)
-        )
+        # 设置超时时间，防止规划阶段耗时过长
+        result = await asyncio.wait_for(planner.run(task=messages), timeout=30.0)
         
-        # 运行团队处理
-        result = await team.run(task=request_text)
+        # 从结果中提取最后一条消息的内容
+        if result and hasattr(result, 'messages') and result.messages:
+            # 获取最后一条消息
+            last_message = result.messages[-1]
+            if hasattr(last_message, 'content'):
+                return last_message.content
+        return ""
+    except asyncio.TimeoutError:
+        logger.warning("[SSH-COMMAND-TEAM] 命令规划阶段超时")
+        return ""
+    except Exception as e:
+        logger.error(f"[SSH-COMMAND-TEAM] 命令规划异常: {e}")
+        return ""
         
-        if not result or not result.messages:
-            return "❌ 命令处理团队执行失败"
-        
-        # 提取最终结果 - 查找CommandExecutor的工具执行结果
-        for message in reversed(result.messages):
-            if hasattr(message, 'content'):
-                content = message.content.replace("TERMINATE", "").strip()
-                # 如果内容包含SSH执行结果的标识，说明这是我们要的结果
-                if content and ("命令执行结果" in content or "SSH操作失败" in content or "无法连接到主机" in content):
-                    logger.info(f"[SSH-COMMAND-TEAM] 找到SSH执行结果: {content[:100]}...")
-                    return content
-                # 如果是工具调用的结果，也返回
-                elif content and len(content) > 50 and "工具返回" not in content:
-                    logger.info(f"[SSH-COMMAND-TEAM] 找到执行结果: {content[:100]}...")
-                    return content
+        # 这部分代码已被新的两阶段执行模式替代
         
         # 如果没有找到合适的结果，回退到简单逻辑
         logger.warning("[SSH-COMMAND-TEAM] 未找到有效的执行结果，回退到简单逻辑")
