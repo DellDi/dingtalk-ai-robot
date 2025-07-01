@@ -91,6 +91,8 @@ class AIMessageHandler:
         """SSH请求工具（薄封装，实际逻辑在 tools.ssh）"""
         # 使用配置中的默认主机或用户指定的主机
         target_host = host or settings.SSH_DEFAULT_HOST or "default-server"
+        logger.info(f"[SSH-CONFIG-DEBUG] settings.SSH_DEFAULT_HOST = {settings.SSH_DEFAULT_HOST}")
+        logger.info(f"[SSH-CONFIG-DEBUG] 最终使用的主机地址: {target_host}")
         logger.info(f"工具: _process_ssh_request_tool 调用，request_text={request_text}, host={target_host}, mode={mode}")
         try:
             return await process_ssh_request(
@@ -147,7 +149,15 @@ class AIMessageHandler:
 
         self.knowledge_expert_agent = AssistantAgent(
             name="KnowledgeExpert",
-            system_message="你是一个知识库专家。如果用户的问题需要从知识库中查找答案，请调用`search_knowledge_base`工具，并使用用户原始提问作为查询参数。根据工具返回的结果回答用户。如果工具未返回有效信息，请告知用户知识库中没有相关内容。回答完毕后，请以'TERMINATE'结束你的回复。",
+            system_message="""你是一个知识库专家。如果用户的问题需要从知识库中查找答案，请调用`search_knowledge_base`工具，并使用用户原始提问作为查询参数。
+
+            **重要的回复格式要求：**
+            1. 必须先调用知识库工具获取搜索结果
+            2. 根据工具返回的结果回答用户问题
+            3. 如果工具未返回有效信息，请告知用户知识库中没有相关内容
+            4. 最后在回复末尾添加'TERMINATE'
+
+            绝对不要只返回'TERMINATE'而不包含搜索结果或回答！""",
             description="知识库专家：当用户提问公司产品、文档、政策或历史数据等需要查阅内部资料的问题时，选择我。我会使用知识库工具查找答案。",
             model_client=self.model_client,
             memory=[
@@ -166,7 +176,7 @@ class AIMessageHandler:
 
             工具参数说明：
             - request_text: 用户原始请求文本
-            - host: 目标主机地址（默认为配置中的SSH_DEFAULT_HOST）
+            - host: 目标主机地址（默认传空）
             - mode: 操作模式 (free/upgrade)
 
             特别注意：
@@ -174,7 +184,19 @@ class AIMessageHandler:
             - 其他SSH操作使用mode='free'
             - 不要直接给出建议，必须调用工具获取实际执行结果
 
-            回答完毕后，请以'TERMINATE'结束你的回复。""",
+            **重要的回复格式要求：**
+            1. 必须先调用SSH工具获取执行结果
+            2. 然后将工具返回的完整结果直接作为你的回复内容
+            3. 不要省略、修改或总结工具返回的任何信息
+            4. 最后在回复末尾添加'TERMINATE'
+
+            回复流程：
+            1. 调用_process_ssh_request_tool工具
+            2. 直接输出工具返回的完整内容
+            3. 添加TERMINATE
+
+            绝对不要只返回'TERMINATE'而不包含工具执行结果！
+            绝对不要使用占位符文本如'[SSH工具返回的完整结果]'！""",
             description="服务器管理专家：当用户咨询服务器维护、Dify平台管理、SSH操作或日志分析等技术问题时，选择我。我会实际执行相关命令。",
             model_client=self.model_client,
             tools=[self._process_ssh_request_tool],
@@ -182,10 +204,16 @@ class AIMessageHandler:
 
         self.jira_specialist_agent = AssistantAgent(
             name="JiraSpecialist",
-            system_message="""
-            你是一个JIRA任务专家。如果用户想要创建JIRA工单/任务，请调用`_process_jira_request_tool`工具，并将用户的完整原始请求作为参数。根据工具返回的结果回复用户。
-            无论调用工具成功失败，你不能遗漏任何工具的信息，最后的回复始终以添加'TERMINATE'结束。
-            """,
+            system_message="""你是一个JIRA任务专家。如果用户想要创建JIRA工单/任务，请调用`_process_jira_request_tool`工具，并将用户的完整原始请求作为参数。
+
+            **重要的回复格式要求：**
+            1. 必须先调用JIRA工具处理用户请求
+            2. 将工具返回的完整结果作为你的回复内容
+            3. 不要省略或修改工具返回的任何信息
+            4. 无论工具调用成功或失败，都要包含完整的工具信息
+            5. 最后在回复末尾添加'TERMINATE'
+
+            绝对不要只返回'TERMINATE'而不包含工具执行结果！""",
             tools=[self._process_jira_request_tool],
             description="JIRA任务专家：当用户的请求明确涉及JIRA、创建工单时，选择我。我会使用JIRA工具处理请求。",
             model_client=self.model_client,

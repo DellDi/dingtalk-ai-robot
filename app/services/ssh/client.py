@@ -101,12 +101,13 @@ class SSHClient:
                 self.client = None
             return False
     
-    async def execute_command(self, command: str) -> Tuple[int, str, str]:
+    async def execute_command(self, command: str, timeout: int = 60) -> Tuple[int, str, str]:
         """
         执行SSH命令
         
         Args:
             command: 要执行的命令
+            timeout: 命令执行超时时间（秒）
             
         Returns:
             Tuple[int, str, str]: 退出码、标准输出和标准错误
@@ -117,23 +118,50 @@ class SSHClient:
                 return -1, "", "SSH连接失败"
         
         try:
-            logger.info(f"在 {self.host} 上执行命令: {command}")
+            logger.info(f"[SSH-DEBUG] 在 {self.host} 上执行命令: {command}")
+            logger.info(f"[SSH-DEBUG] 命令超时设置: {timeout}秒")
+            
+            # 检测可能有问题的命令类型
+            interactive_commands = ['top', 'htop', 'vi', 'vim', 'nano', 'less', 'more', 'tail -f']
+            is_interactive = any(cmd in command.lower() for cmd in interactive_commands)
+            if is_interactive:
+                logger.warning(f"[SSH-DEBUG] 检测到交互式命令: {command}")
             
             # 使用run_in_executor在线程池中执行阻塞操作
             loop = asyncio.get_event_loop()
             
+            logger.info(f"[SSH-DEBUG] 开始执行命令...")
             # 执行命令
             stdin, stdout, stderr = await loop.run_in_executor(
                 None,
-                lambda: self.client.exec_command(command, timeout=60)
+                lambda: self.client.exec_command(command, timeout=timeout)
             )
             
-            # 获取命令输出
-            exit_code = await loop.run_in_executor(
-                None,
-                lambda: stdout.channel.recv_exit_status()
-            )
+            logger.info(f"[SSH-DEBUG] 命令已提交，等待退出状态...")
             
+            # 使用asyncio.wait_for添加超时控制
+            try:
+                # 获取命令输出
+                exit_code = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        None,
+                        lambda: stdout.channel.recv_exit_status()
+                    ),
+                    timeout=timeout
+                )
+                logger.info(f"[SSH-DEBUG] 获取到退出状态: {exit_code}")
+                
+            except asyncio.TimeoutError:
+                logger.error(f"[SSH-DEBUG] 命令执行超时 ({timeout}秒)，可能是交互式命令或长时间运行命令")
+                # 尝试强制关闭通道
+                try:
+                    stdout.channel.close()
+                    stderr.channel.close()
+                except:
+                    pass
+                return -2, "", f"命令执行超时 ({timeout}秒) - 可能是交互式命令或需要更长执行时间"
+            
+            logger.info(f"[SSH-DEBUG] 开始读取输出...")
             stdout_str = await loop.run_in_executor(
                 None,
                 lambda: stdout.read().decode('utf-8')
@@ -144,14 +172,17 @@ class SSHClient:
                 lambda: stderr.read().decode('utf-8')
             )
             
-            logger.info(f"命令执行完成，退出码: {exit_code}")
+            logger.info(f"[SSH-DEBUG] 命令执行完成，退出码: {exit_code}")
+            logger.info(f"[SSH-DEBUG] 标准输出长度: {len(stdout_str)} 字符")
+            logger.info(f"[SSH-DEBUG] 标准错误长度: {len(stderr_str)} 字符")
+            
             if exit_code != 0:
-                logger.warning(f"命令执行异常: {stderr_str}")
+                logger.warning(f"[SSH-DEBUG] 命令执行异常: {stderr_str}")
                 
             return exit_code, stdout_str, stderr_str
             
         except Exception as e:
-            logger.error(f"执行命令异常: {e}")
+            logger.error(f"[SSH-DEBUG] 执行命令异常: {e}")
             return -1, "", str(e)
         
     async def upload_file(self, local_path: str, remote_path: str) -> bool:
