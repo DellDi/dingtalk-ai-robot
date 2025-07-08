@@ -6,7 +6,6 @@ AI消息处理器模块，使用AutoGen SelectorGroupChat多智能体实现智�
 """
 
 import os
-import asyncio
 from autogen_agentchat.base import TaskResult
 from loguru import logger
 from typing import Optional
@@ -26,8 +25,8 @@ from app.services.ai.tools import (
     search_knowledge_base,
     process_jira_request,
     process_ssh_request,
+    process_sql_query,
 )
-
 
 # --- Selector Prompt ---#
 SELECTOR_PROMPT_ZH = """你是一个智能路由选择器。根据用户的最新请求内容，从以下可用智能体中选择最合适的一个来处理该请求。
@@ -105,6 +104,14 @@ class AIMessageHandler:
         except Exception as e:  # noqa: BLE001
             logger.error(f"SSH请求工具调用失败: {e}")
             return f"❌ 无法执行SSH操作: {e}"
+
+    async def _process_sql_query_tool(self, nl_text: str) -> str:
+        """SQL 查询工具封装，利用 tools.sql.process_sql_query
+        参数：
+        ---
+            nl_text: 要检索查询的原始问题。例如，"当前数据库有多少个用户了？"
+        """
+        return await process_sql_query(nl_text=nl_text)
 
     async def _process_weather_request_tool(
         self,
@@ -213,6 +220,24 @@ class AIMessageHandler:
             model_client=self.model_client,
         )
 
+        self.sql_expert_agent = AssistantAgent(
+            name="SQLExpert",
+            system_message="""你是一个数据库查询专家，能够将中文自然语言问题转换为SQL并查询本地数据库。
+            当且仅当用户的问题涉及数据库检索、数据统计或者明显需要查询本地数据时
+            调用`_process_sql_query_tool`工具。
+            工具参数说明：
+            - nl_text: 要检索查询的问题。例如，"当前数据库有哪些用户？"
+                **重要的回复格式要求：**
+                1. 需要检索查询时，必须先调用SQL工具获取查询结果
+                2. 根据工具返回的结果进行简要解释或总结
+                3. 最后在回复末尾添加'TERMINATE'
+
+            绝对不要只返回'TERMINATE'而不包含查询结果！""",
+            description="数据库专家：当用户需要查询本地数据库信息或数据统计时，选择我。",
+            model_client=self.model_client,
+            tools=[self._process_sql_query_tool],
+        )
+
         self.general_assistant_agent = AssistantAgent(
             name="GeneralAssistant",
             system_message="""
@@ -225,7 +250,7 @@ class AIMessageHandler:
              系统运行状态查询
              天气查询、支持、当前、近七天、支持历史查询
             ```
-            2. 数据技术知识查询
+            2. 本地数据库的查询和分析
             3. JIRA需求提单：告诉用户提单格式要求：
             ```
                 配置jira信息
@@ -262,6 +287,7 @@ class AIMessageHandler:
         )
 
         selectable_agents = [
+            self.sql_expert_agent,
             self.knowledge_expert_agent,
             self.server_admin_agent,
             self.jira_specialist_agent,
