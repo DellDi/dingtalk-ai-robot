@@ -50,3 +50,28 @@ def get_openai_client(**overrides) -> OpenAIChatCompletionClient:
     # 过滤掉 None 的参数，防止传递无效参数
     valid_config = {k: v for k, v in config.items() if v is not None}
     return OpenAIChatCompletionClient(**valid_config)
+
+def get_gemini_client(**overrides) -> OpenAIChatCompletionClient:
+    """
+    获取 GeminiChatCompletionClient 实例，支持参数覆盖。
+    优先级：调用参数 > 默认配置。
+    用法：
+        client = get_gemini_client(api_key="xxx", model="gemini-2.5-flash")
+    """
+    DefaultConfig = {
+        "api_key": os.getenv("GEMINI_API_KEY"),
+        "base_url": "",
+        "model": ModelFamily.GEMINI_2_5_FLASH,
+        "model_info": {
+            "vision": True,
+            "function_calling": True,
+            "json_output": False,
+            "multiple_system_messages": True,
+            "family": ModelFamily.GEMINI_2_5_FLASH,
+            "structured_output": False,
+        },
+    }
+    config = deep_merge_dicts(DefaultConfig.copy(), overrides)
+    # 过滤掉 None 的参数，防止传递无效参数
+    valid_config = {k: v for k, v in config.items() if v is not None}
+    return OpenAIChatCompletionClient(**valid_config)

@@ -20,7 +20,7 @@ from autogen_ext.memory.chromadb import ChromaDBVectorMemory  # Added import
 
 from app.core.config import settings
 
-from app.services.ai.openai_client import get_openai_client
+from app.services.ai.client.openai_client import get_openai_client
 from app.services.ai.tools import (
     process_weather_request,
     search_knowledge_base,
