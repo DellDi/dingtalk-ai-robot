@@ -6,6 +6,7 @@ AI消息处理器模块，使用AutoGen SelectorGroupChat多智能体实现智�
 """
 
 import os
+import time
 from autogen_agentchat.base import TaskResult
 from loguru import logger
 from typing import Optional
@@ -27,6 +28,7 @@ from app.services.ai.tools import (
     process_ssh_request,
     process_sql_query,
 )
+from app.db_utils import save_conversation_record
 
 # --- Selector Prompt ---#
 SELECTOR_PROMPT_ZH = """你是一个智能路由选择器。根据用户的最新请求内容，从以下可用智能体中选择最合适的一个来处理该请求。
@@ -313,7 +315,10 @@ class AIMessageHandler:
         self._current_sender_id = sender_id
         self._current_conversation_id = conversation_id
 
+        # 记录开始时间用于计算响应时间
+        start_time = time.time()
         final_reply = "抱歉，处理您的请求时出现了问题，未能获取明确回复。"
+        agent_type = None
 
         try:
             team = self.groupchat
@@ -374,13 +379,36 @@ class AIMessageHandler:
             if not final_reply_content or final_reply_content.lower() == "none":
                 final_reply_content = "已处理您的请求，但未生成明确的文本回复。"
 
-            return final_reply_content
+            final_reply = final_reply_content
+
+            # 尝试从消息源获取智能体类型
+            if hasattr(actual_final_message, 'source'):
+                agent_type = actual_final_message.source
 
         except Exception as e:
             logger.error(f"处理消息时发生异常: {e}", exc_info=True)
             final_reply = f"抱歉，处理您的请求时发生错误: {e}"
 
         finally:
+            # 计算响应时间
+            end_time = time.time()
+            response_time_ms = int((end_time - start_time) * 1000)
+
+            # 保存对话记录到数据库
+            try:
+                record_id = save_conversation_record(
+                    conversation_id=conversation_id,
+                    sender_id=sender_id,
+                    user_question=text,
+                    ai_response=final_reply,
+                    message_type="text",
+                    response_time_ms=response_time_ms,
+                    agent_type=agent_type,
+                )
+                logger.info(f"对话记录已保存，记录ID: {record_id}, 响应时间: {response_time_ms}ms")
+            except Exception as e:
+                logger.error(f"保存对话记录失败: {e}")
+
             self._current_sender_id = None
             self._current_conversation_id = None
 
