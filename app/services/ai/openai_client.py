@@ -1,6 +1,7 @@
 # openai_client.py
 """
 统一封装 OpenAIChatCompletionClient，支持全局默认配置和参数覆盖。
+同时支持 Gemini 模型客户端。
 """
 import os
 from autogen_ext.models.openai import OpenAIChatCompletionClient
@@ -49,4 +50,39 @@ def get_openai_client(**overrides) -> OpenAIChatCompletionClient:
     config = deep_merge_dicts(_DEFAULT_CONFIG.copy(), overrides)
     # 过滤掉 None 的参数，防止传递无效参数
     valid_config = {k: v for k, v in config.items() if v is not None}
+    return OpenAIChatCompletionClient(**valid_config)
+
+
+# Gemini 模型客户端默认配置
+_GEMINI_DEFAULT_CONFIG = {
+    "api_key": os.getenv("GEMINI_API_KEY"),
+    "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+    "model": "gemini-1.5-flash",
+    "model_info": {
+        "vision": True,
+        "function_calling": True,
+        "json_output": True,
+        "multiple_system_messages": True,
+        "family": ModelFamily.ANY,
+        "structured_output": False,
+    },
+}
+
+
+def get_gemini_client(**overrides) -> OpenAIChatCompletionClient:
+    """
+    获取 Gemini 模型客户端实例，使用 OpenAI 兼容的 API。
+    优先级：调用参数 > 默认配置。
+    用法：
+        client = get_gemini_client(model="gemini-1.5-pro")
+    """
+    config = deep_merge_dicts(_GEMINI_DEFAULT_CONFIG.copy(), overrides)
+    # 过滤掉 None 的参数，防止传递无效参数
+    valid_config = {k: v for k, v in config.items() if v is not None}
+    
+    # 检查 API Key 是否存在
+    if not valid_config.get("api_key"):
+        logger.warning("未配置 GEMINI_API_KEY，将使用默认 OpenAI 客户端")
+        return get_openai_client(**overrides)
+    
     return OpenAIChatCompletionClient(**valid_config)
