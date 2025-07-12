@@ -14,7 +14,7 @@ from autogen_agentchat.conditions import MaxMessageTermination, TextMentionTermi
 from loguru import logger
 from pydantic import json_schema
 
-from app.services.ai.openai_client import get_openai_client
+from app.services.ai.client.openai_client import get_openai_client
 from app.services.ssh.client import SSHClient, SSHManager
 from app.core.config import settings
 

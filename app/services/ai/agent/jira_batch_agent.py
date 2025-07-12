@@ -15,7 +15,7 @@ from autogen_agentchat.ui import Console
 
 from app.db_utils import get_jira_account, save_jira_account
 from app.services.ai.tools.jira_bulk_creator import JiraTicketCreator
-from app.services.ai.openai_client import get_openai_client
+from app.services.ai.client.openai_client import get_openai_client
 
 
 # ---- TypedDict for input payload ---- #

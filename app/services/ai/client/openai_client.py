@@ -79,10 +79,10 @@ def get_gemini_client(**overrides) -> OpenAIChatCompletionClient:
     config = deep_merge_dicts(_GEMINI_DEFAULT_CONFIG.copy(), overrides)
     # 过滤掉 None 的参数，防止传递无效参数
     valid_config = {k: v for k, v in config.items() if v is not None}
-    
+
     # 检查 API Key 是否存在
     if not valid_config.get("api_key"):
         logger.warning("未配置 GEMINI_API_KEY，将使用默认 OpenAI 客户端")
         return get_openai_client(**overrides)
-    
+
     return OpenAIChatCompletionClient(**valid_config)
