@@ -15,7 +15,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from loguru import logger
-from app.services.ai.openai_client import get_gemini_client, get_openai_client
+from app.services.ai.client.openai_client import get_gemini_client
 from app.services.ai.weekly_report_agent import WeeklyReportAgent
 
 

@@ -250,7 +250,8 @@ class RobotMessageHandler(ChatbotHandler):
             is_group_chat = conversation_id and not sender_id
             at_users = getattr(incoming_message, "sender_staff_id")
             is_at_robot = len(at_users) > 0
-            sender_id = [sender_id] if sender_id else []
+            # 保持sender_id为字符串类型，不要转换为列表
+            sender_id = sender_id or "unknown_sender"
             # 日志记录消息类型和内容
             if is_group_chat:
                 msg_type = "群聊" + ("（@机器人）" if is_at_robot else "")
@@ -282,7 +283,7 @@ class RobotMessageHandler(ChatbotHandler):
                     global_dingtalk_client.send_group_message(conversation_id, response)
                 else:
                     # 单聊回复 - 需要用户ID列表
-                    global_dingtalk_client.send_private_message(sender_id, response)
+                    global_dingtalk_client.send_private_message([sender_id], response)
 
             return AckMessage.STATUS_OK, "OK"
         except Exception as e:

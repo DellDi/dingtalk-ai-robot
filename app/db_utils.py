@@ -43,6 +43,8 @@ def get_conn():
             log_content TEXT NOT NULL,
             summary_content TEXT,
             dingtalk_report_id TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """
     )

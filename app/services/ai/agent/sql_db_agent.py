@@ -20,7 +20,7 @@ from autogen_agentchat.conditions import TextMentionTermination, MaxMessageTermi
 from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_agentchat.messages import TextMessage
 
-from app.services.ai.openai_client import get_openai_client
+from app.services.ai.client.openai_client import get_openai_client
 from app.db_utils import get_conn, DB_PATH
 
 # -----------------------------------------------------------------------------

@@ -22,7 +22,7 @@ from app.services.ai.client.openai_client import get_openai_client
 
 class JiraInput(TypedDict):
     text: str
-    sender_id: list
+    sender_id: str
     conversation_id: str
 
 
@@ -32,8 +32,7 @@ class JiraAccountAgent:
     def __init__(self):
         pass
 
-    async def extract_and_save_account(self, user_list: list, text: str) -> str:
-        user_id = user_list[0]
+    async def extract_and_save_account(self, user_id: str, text: str) -> str:
         user_info = get_jira_account(user_id)
         if user_info:
             return ""  # 已有账号，直接返回空串代表无需处理
@@ -225,21 +224,20 @@ class JiraBatchAgent:
     async def process(self, input: JiraInput) -> str:
         logger.info(f"开始为用户 {input.get('sender_id')} 处理Jira批量代理请求: {input.get('text')[:100]}...")
         text = input.get("text")
-        user_list = input.get("sender_id")
-        user_id = user_list[0]
+        user_id = input.get("sender_id")
 
         # 1. 账号信息智能体优先处理
-        account_result = await self.account_agent.extract_and_save_account(user_list, text)
+        account_result = await self.account_agent.extract_and_save_account(user_id, text)
         if account_result:  # 有提示语，说明账号未补全或刚保存成功让用户重试，直接返回提示
-            logger.info(f"用户 {user_list} 账号处理结果: {account_result}")
+            logger.info(f"用户 {user_id} 账号处理结果: {account_result}")
             return account_result
 
         # 2. 账号已齐全，进入提单分析主流程
-        logger.info(f"用户 {user_list} 账号已存在或已处理，开始解析提单内容...")
+        logger.info(f"用户 {user_id} 账号已存在或已处理，开始解析提单内容...")
         parsed_ticket_data_list = await self.process_message(text)
 
         if not parsed_ticket_data_list:
-            logger.warning(f"用户 {user_list} 的输入未能通过AI解析出任何有效的工单信息。原始输入: {text}")
+            logger.warning(f"用户 {user_id} 的输入未能通过AI解析出任何有效的工单信息。原始输入: {text}")
             return "抱歉，我未能从您的输入中准确解析出需要创建的工单信息。请尝试调整您的描述或检查格式。"
 
         # 3. 获取Jira执行凭据 (用户名和密码从数据库获取) (variable) user_jira_account: Tuple[str, str] | None

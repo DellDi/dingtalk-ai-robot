@@ -16,7 +16,7 @@ from autogen_agentchat.messages import TextMessage
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 
 from app.core.config import settings
-from app.services.ai.openai_client import get_openai_client, get_gemini_client
+from app.services.ai.client.openai_client import get_openai_client, get_gemini_client
 
 
 class WeeklyReportAgent:
