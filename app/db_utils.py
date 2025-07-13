@@ -1,5 +1,7 @@
 import sqlite3
 from typing import Optional, Tuple, List, Dict, Any
+from datetime import datetime, timedelta
+from app.utils.time_utils import get_beijing_time_str
 
 DB_PATH = "user_data.db"
 
@@ -313,12 +315,15 @@ def save_conversation_record(
     Returns:
         int: 插入记录的ID
     """
+    # 使用北京时间（UTC+8）
+    beijing_time = get_beijing_time_str()
+    
     conn = get_conn()
     cursor = conn.execute(
         """
         INSERT INTO conversation_records
         (conversation_id, sender_id, user_question, ai_response, message_type, response_time_ms, agent_type, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             conversation_id,
@@ -328,6 +333,8 @@ def save_conversation_record(
             message_type,
             response_time_ms,
             agent_type,
+            beijing_time,
+            beijing_time
         ),
     )
     record_id = cursor.lastrowid

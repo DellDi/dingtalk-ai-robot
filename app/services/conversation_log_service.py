@@ -8,9 +8,12 @@
 
 
 import asyncio
-import sqlite3
+import csv
+import io
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Any, Optional, Tuple, Union
+
+from app.utils.time_utils import get_beijing_time_str, get_beijing_date_days_ago
 
 from loguru import logger
 
@@ -133,9 +136,9 @@ class ConversationLogService:
             Dict[str, Any]: 统计信息
         """
         try:
-            # 计算日期范围
-            end_date = datetime.now().strftime("%Y-%m-%d")
-            start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+            # 计算日期范围（北京时间）
+            end_date = get_beijing_time_str(fmt="%Y-%m-%d")
+            start_date = get_beijing_date_days_ago(days)
 
             # 使用线程池执行数据库操作
             stats = await asyncio.to_thread(
@@ -162,8 +165,8 @@ class ConversationLogService:
             int: 记录数量
         """
         try:
-            # 计算截止日期
-            cutoff_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+            # 计算截止日期（北京时间）
+            cutoff_date = get_beijing_date_days_ago(days)
 
             # 执行查询操作
             def _count_old_records():
@@ -195,8 +198,8 @@ class ConversationLogService:
             Dict[str, Any]: 清理结果
         """
         try:
-            # 计算截止日期
-            cutoff_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+            # 计算截止日期（北京时间）
+            cutoff_date = get_beijing_date_days_ago(days)
 
             # 执行删除操作
             def _delete_old_records():

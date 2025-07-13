@@ -35,7 +35,7 @@ class JiraAccountAgent:
     async def extract_and_save_account(self, user_id: str, text: str) -> str:
         user_info = get_jira_account(user_id)
         if user_info:
-            return ""  # 已有账号，直接返回空串代表无需处理
+            return None  # 已有账号，直接返回None代表无需处理
         match = re.search(self.JIRA_ACCOUNT_REGEX, text)
         if match:
             username, password = match.groups()
@@ -83,7 +83,7 @@ class JiraAccountAgent:
 
         messages = [TextMessage(content=text, source="user")]
         chat_res = await params_agent.on_messages(messages, CancellationToken())
-        logger.info(f"参数提取智能体响应: {chat_res}")
+        logger.info(f"JIRA账号：参数提取智能体响应: {chat_res}")
         return self._extract_last_response(chat_res)
 
     def _extract_last_response(self, chat_res: Response): # Adjusted type hint
