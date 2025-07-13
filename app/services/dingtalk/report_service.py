@@ -14,7 +14,11 @@ import httpx
 from loguru import logger
 
 from app.core.config import settings
-from app.core.dingtalk_client import DingTalkClient
+
+# 延迟导入DingTalkClient以避免循环导入
+def get_dingtalk_client():
+    from app.core.dingtalk_client import DingTalkClient
+    return DingTalkClient
 
 
 class DingTalkReportService:
@@ -29,10 +33,15 @@ class DingTalkReportService:
     def _get_access_token(self) -> Optional[str]:
         """获取钉钉访问令牌"""
         try:
-            # 使用现有的DingTalkClient获取token
-            from app.core.dingtalk_client import global_dingtalk_client
-            if global_dingtalk_client:
-                return global_dingtalk_client.get_access_token()
+            # 延迟导入，避免循环导入问题
+            def get_global_client():
+                from app.core.dingtalk_client import global_dingtalk_client
+                return global_dingtalk_client
+                
+            # 尝试获取全局客户端
+            global_client = get_global_client()
+            if global_client:
+                return global_client.get_access_token()
             
             # 如果没有全局客户端，直接调用API
             url = f"{self.base_url}/gettoken"
