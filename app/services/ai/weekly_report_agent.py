@@ -13,11 +13,8 @@ from autogen_agentchat.agents import AssistantAgent
 from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_agentchat.conditions import TextMentionTermination
 from autogen_agentchat.messages import TextMessage
-from autogen_ext.models.openai import OpenAIChatCompletionClient
 
-from app.core.config import settings
 from app.services.ai.client.openai_client import get_openai_client, get_gemini_client
-
 
 class WeeklyReportAgent:
     """周报总结智能体，使用双智能体协作生成高质量周报"""

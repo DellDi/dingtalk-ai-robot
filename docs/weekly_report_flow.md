@@ -6,63 +6,64 @@
 graph TB
     %% 定时任务触发
     A[每周六 20:30<br/>定时任务触发] --> B[WeeklyReportService<br/>自动周报任务]
-    
+
     %% 日志收集阶段
-    B --> C[检查用户周报日志]
-    C --> D{数据库中是否<br/>存在日志?}
-    D -->|否| E[创建示例日志数据]
-    D -->|是| F[查询周一到周四日志]
-    E --> G[整合日志内容]
+    B --> C[检查用户日报记录]
+    C --> D{钉钉API调用<br/>是否成功?}
+    D -->|否| E[回退到本地示例数据]
+    D -->|是| F[获取钉钉周一到周四日报]
+    E --> G[整合日报内容]
     F --> G
-    
+
     %% AI智能体处理阶段
     G --> H[WeeklyReportAgent<br/>AI智能体处理]
     H --> I{选择处理模式}
     I -->|标准模式| J[双智能体协作]
     I -->|快速模式| K[单智能体处理]
-    
+
     %% 双智能体协作流程
     J --> L[总结智能体<br/>分析日志内容]
     L --> M[生成结构化周报]
     M --> N[检察官智能体<br/>审核总结质量]
     N --> O[确保专业性和准确性]
     O --> P[输出最终周报总结]
-    
+
     %% 单智能体流程
     K --> Q[快速生成周报总结]
     Q --> P
-    
+
     %% 钉钉推送阶段
     P --> R[DingTalkReportService<br/>钉钉日报服务]
     R --> S[格式化周报内容]
     S --> T[调用钉钉日报API]
     T --> U[创建钉钉日报]
     U --> V[发送到群聊]
-    
+
     %% 数据持久化
-    V --> W[保存到数据库<br/>weekly_logs表]
+    V --> W[保存AI总结后的周报<br/>到weekly_logs表]
     W --> X[任务执行完成]
-    
+
     %% 状态通知
     X --> Y[发送成功通知<br/>到钉钉机器人]
-    
+
     %% 异常处理
     C -.->|异常| Z[异常处理]
     H -.->|异常| Z
     R -.->|异常| Z
     Z --> AA[发送失败通知<br/>到钉钉机器人]
-    
+
     %% 样式定义
     classDef processBox fill:#e1f5fe,stroke:#01579b,stroke-width:2px
     classDef aiBox fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
     classDef apiBox fill:#e8f5e8,stroke:#1b5e20,stroke-width:2px
     classDef dbBox fill:#fff3e0,stroke:#e65100,stroke-width:2px
     classDef errorBox fill:#ffebee,stroke:#c62828,stroke-width:2px
-    
+
     class A,B,C,X,Y processBox
     class H,I,J,K,L,M,N,O,P,Q aiBox
     class R,S,T,U,V apiBox
-    class D,E,F,G,W dbBox
+    class E,W dbBox
+    class D,F,G apiBox
     class Z,AA errorBox
 ```
 
@@ -76,40 +77,40 @@ graph LR
         B[DingTalkReportService<br/>钉钉API封装]
         C[WeeklyReportAgent<br/>AI智能体服务]
     end
-    
+
     %% 数据层
     subgraph "数据持久层"
         D[(SQLite数据库<br/>weekly_logs表)]
         E[日志文件系统]
     end
-    
+
     %% AI智能体层
     subgraph "AI智能体层"
         F[总结智能体<br/>SummarizerAgent]
         G[检察官智能体<br/>ReviewerAgent]
         H[AutoGen<br/>RoundRobinGroupChat]
     end
-    
+
     %% 外部API层
     subgraph "外部API层"
         I[钉钉日报API]
         J[钉钉机器人API]
     end
-    
+
     %% API接口层
     subgraph "API接口层"
-        K[/api/weekly-report/check-logs]
+        K[/api/weekly-report/check-dingding-logs]
         L[/api/weekly-report/generate-summary]
         M[/api/weekly-report/create-report]
         N[/api/weekly-report/auto-task]
     end
-    
+
     %% 定时任务层
     subgraph "定时任务层"
         O[Scheduler调度器]
         P[每周六20:30<br/>定时触发]
     end
-    
+
     %% 连接关系
     A --> D
     A --> C
@@ -127,14 +128,14 @@ graph LR
     N --> A
     O --> P
     P --> A
-    
+
     %% 样式定义
     classDef serviceBox fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
     classDef dataBox fill:#f1f8e9,stroke:#388e3c,stroke-width:2px
     classDef aiBox fill:#fce4ec,stroke:#c2185b,stroke-width:2px
     classDef apiBox fill:#fff8e1,stroke:#f57c00,stroke-width:2px
     classDef scheduleBox fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
-    
+
     class A,B,C serviceBox
     class D,E dataBox
     class F,G,H aiBox
@@ -152,16 +153,16 @@ sequenceDiagram
     participant Agent as WeeklyReportAgent
     participant DingTalk as DingTalkReportService
     participant DB as 数据库
-    
+
     %% 1. 检查日志接口
     Note over Client,DB: 1. 检查周报日志
     Client->>API: GET /api/weekly-report/check-logs
     API->>Service: check_user_weekly_logs()
-    Service->>DB: 查询周一到周四日志
-    DB-->>Service: 返回日志数据
+    Service->>DingTalk: 查询钉钉周一到周四日报
+    DingTalk-->>Service: 返回日报数据
     Service-->>API: 返回整合后的日志内容
     API-->>Client: JSON响应
-    
+
     %% 2. 生成总结接口
     Note over Client,DB: 2. 生成周报总结
     Client->>API: POST /api/weekly-report/generate-summary
@@ -171,7 +172,7 @@ sequenceDiagram
     Agent-->>Service: 返回周报总结
     Service-->>API: 返回总结结果
     API-->>Client: JSON响应
-    
+
     %% 3. 创建报告接口
     Note over Client,DB: 3. 创建钉钉日报
     Client->>API: POST /api/weekly-report/create-report
@@ -182,7 +183,7 @@ sequenceDiagram
     Service->>DB: 保存周报记录
     Service-->>API: 返回创建结果
     API-->>Client: JSON响应
-    
+
     %% 4. 自动任务接口
     Note over Client,DB: 4. 执行自动任务
     Client->>API: POST /api/weekly-report/auto-task
@@ -201,18 +202,18 @@ sequenceDiagram
 graph TD
     %% 输入阶段
     A[原始日志内容] --> B[WeeklyReportAgent]
-    
+
     %% 模式选择
     B --> C{选择处理模式}
-    
+
     %% 快速模式
     C -->|快速模式| D[单智能体处理]
     D --> E[SummarizerAgent<br/>快速生成总结]
     E --> F[输出周报总结]
-    
+
     %% 标准模式
     C -->|标准模式| G[RoundRobinGroupChat<br/>双智能体协作]
-    
+
     %% 双智能体协作流程
     G --> H[第一轮：SummarizerAgent]
     H --> I[分析日志内容<br/>生成初版周报]
@@ -225,17 +226,17 @@ graph TD
     O --> P[最终审核确认]
     P --> F
     L -->|否| F
-    
+
     %% 输出阶段
     F --> Q[专业化周报总结]
     Q --> R[发送到钉钉日报]
-    
+
     %% 样式定义
     classDef inputBox fill:#e8f5e8,stroke:#2e7d32,stroke-width:2px
     classDef processBox fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
     classDef agentBox fill:#fce4ec,stroke:#ad1457,stroke-width:2px
     classDef outputBox fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
-    
+
     class A inputBox
     class B,C,G,L processBox
     class D,E,H,I,J,K,M,N,O,P agentBox

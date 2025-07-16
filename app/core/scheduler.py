@@ -100,12 +100,12 @@ async def weekly_report_task():
             if global_dingtalk_client:
                 success_message = f"""周报自动生成成功
 
-任务执行时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-日志数量: {result['data']['logs_info']['logs_count']}
-AI总结模式: {result['data']['summary_info']['mode']}
-钉钉日报ID: {result['data']['send_info']['report_id']}
+                    任务执行时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+                    日志数量: {result['data']['logs_info']['logs_count']}
+                    AI总结模式: {result['data']['summary_info']['mode']}
+                    钉钉日报ID: {result['data']['send_info']['report_id']}
 
-周报已自动发送到钉钉，请查收！"""
+                周报已自动发送到钉钉，请查收！"""
 
                 # 这里可以添加发送消息到特定群聊的逻辑
                 logger.info("周报生成成功通知已准备发送")

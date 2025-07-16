@@ -204,18 +204,24 @@ python -m app.main
 
 系统每周六20:30自动执行周报生成任务，包含以下流程：
 
-1. **日志收集**：自动检查本周一到周四的用户日志
+1. **日志收集**：通过钉钉API查询本周一到周四的用户日报记录
 2. **AI总结**：使用AutoGen双智能体协作生成专业周报
 3. **钉钉推送**：自动创建钉钉日报并发送到群聊
 4. **状态通知**：任务执行结果通过钉钉机器人通知
 
 #### 📋 API接口
 
-1. **检查周报日志**：`GET /api/weekly-report/check-logs`
-   - 查询用户本周一到周四的日志记录
-   - 返回整合后的日志内容
+1. **查询钉钉日报记录**：`GET /api/v1/weekly-report/check-logs`
+   - 直接调用钉钉API获取用户日报记录
+   - 支持可选的日期范围参数
+   - 返回整合后的日报内容
 
-2. **生成周报总结**：`POST /api/weekly-report/generate-summary`
+2. **查询本地已发送周报**：`GET /api/v1/weekly-report/local-reports`
+   - 查询本地数据库中已发送成功的周报记录
+   - 支持按用户ID和日期范围过滤
+   - 返回已发送周报的详细信息
+
+3. **生成周报总结**：`POST /api/v1/weekly-report/generate-summary`
    ```json
    {
      "content": "原始日志内容",
@@ -223,7 +229,7 @@ python -m app.main
    }
    ```
 
-3. **创建钉钉日报**：`POST /api/weekly-report/create-report`
+4. **创建钉钉日报**：`POST /api/v1/weekly-report/create-report`
    ```json
    {
      "summary_content": "周报总结内容",
@@ -232,11 +238,11 @@ python -m app.main
    }
    ```
 
-4. **执行自动任务**：`POST /api/weekly-report/auto-task`
+5. **执行自动任务**：`POST /api/weekly-report/auto-task`
    - 执行完整的自动周报流程
    - 通常由定时任务调用
 
-5. **健康检查**：`GET /api/weekly-report/health`
+6. **健康检查**：`GET /api/weekly-report/health`
    - 检查周报服务各组件状态
 
 #### 🎯 智能体架构
