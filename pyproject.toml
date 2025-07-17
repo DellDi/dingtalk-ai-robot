@@ -77,3 +77,8 @@ disallow_incomplete_defs = true
 line-length = 100
 target-version = "py312"
 select = ["E", "F", "I", "N", "W", "B", "C4", "UP", "SIM", "RUF"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.0",
+]

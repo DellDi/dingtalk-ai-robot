@@ -36,18 +36,32 @@ class JiraAccountAgent:
         user_info = get_jira_account(user_id)
         if user_info:
             return None  # 已有账号，直接返回None代表无需处理
+        
+        # 首先尝试正则表达式匹配
         match = re.search(self.JIRA_ACCOUNT_REGEX, text)
         if match:
             username, password = match.groups()
             save_jira_account(user_id, username, password)
             return "账号保存成功，请重新输入提单内容。"
-        creds = await self.handle_agent_params(text)
-        if creds and isinstance(json.loads(creds), dict) and "username" in json.loads(creds) and "password" in json.loads(creds):
-            user_info = json.loads(creds)
-            username, password = user_info["username"], user_info["password"]
-            save_jira_account(user_id, username, password)
-            return "账号保存成功，请重新输入提单内容。"
-        return "请输入你的**JIRA账号信息**（格式如下）：\n **配置jira信息**\n**用户名**: `your_jira_username`\n**密码**: `your_jira_password`"
+        
+        # 检查是否是明显的JIRA工单创建请求，如果是则直接返回配置提示
+        jira_keywords = ["创建jira", "jira单子", "提单", "工单", "bug", "需求", "任务"]
+        if any(keyword in text.lower() for keyword in jira_keywords):
+            logger.info(f"用户 {user_id} 输入包含JIRA关键词但未配置账号，直接返回配置提示")
+            return "请先配置你的**JIRA账号信息**（格式如下）：\n**用户名**: `your_jira_username`\n**密码**: `your_jira_password`\n\n配置完成后，请重新输入提单内容。"
+        
+        # 只有当输入可能包含账号信息时才调用智能体
+        if any(keyword in text for keyword in ["用户名", "密码", "账号", "登录", "username", "password"]):
+            try:
+                creds = await self.handle_agent_params(text)
+                if creds and isinstance(creds, dict) and "username" in creds and "password" in creds:
+                    username, password = creds["username"], creds["password"]
+                    save_jira_account(user_id, username, password)
+                    return "账号保存成功，请重新输入提单内容。"
+            except Exception as e:
+                logger.error(f"处理账号参数时发生错误: {e}")
+        
+        return "请输入你的**JIRA账号信息**（格式如下）：\n**用户名**: `your_jira_username`\n**密码**: `your_jira_password`"
 
     async def handle_agent_params(self, text: str) -> Optional[Dict[str, Any]]:
         """
@@ -92,20 +106,35 @@ class JiraAccountAgent:
         """
         last_message = chat_res.chat_message
         logger.info(f"最后一个消息: {last_message}")
+        
         # Ensure last_message is TextMessage and has content
         if isinstance(last_message, TextMessage) and hasattr(last_message, 'content') and last_message.content:
+            content_str = last_message.content
+            if not isinstance(content_str, str): # pragma: no cover
+                logger.warning(f"Last message content is not a string: {content_str}")
+                return None
+            
+            # 先尝试直接解析JSON
             try:
-                # Attempt to load JSON, ensure content is a string
-                content_str = last_message.content
-                if not isinstance(content_str, str): # pragma: no cover
-                    # This case might occur if content is unexpectedly not a string
-                    logger.warning(f"Last message content is not a string: {content_str}")
-                    return None
                 return json.loads(content_str)
-            except json.JSONDecodeError: # pragma: no cover
-                logger.warning(f"Error decoding JSON from text: {last_message.content}")
+            except json.JSONDecodeError:
+                # 如果JSON解析失败，尝试从文本中提取JSON块
+                json_pattern = r'\{[^{}]*"username"[^{}]*"password"[^{}]*\}'
+                json_match = re.search(json_pattern, content_str)
+                if json_match:
+                    try:
+                        return json.loads(json_match.group())
+                    except json.JSONDecodeError:
+                        logger.warning(f"Failed to parse extracted JSON: {json_match.group()}")
+                
+                # 如果仍然解析失败，记录警告并返回None
+                logger.warning(f"Error decoding JSON from text: {content_str[:200]}...")
+                return None
             except Exception as e: # pragma: no cover
                 logger.error(f"An unexpected error occurred during JSON extraction: {e}")
+                return None
+        
+        logger.warning("No valid message content found")
         return None
 
 

@@ -9,18 +9,20 @@ from typing import Any, Dict
 
 from loguru import logger
 
-from app.services.ai.agent import JiraBatchAgent
+# 延迟导入避免循环依赖
 
 __all__ = ["process_jira_request"]
 
 
 # 复用单例，避免频繁初始化
-_jira_agent: JiraBatchAgent | None = None
+_jira_agent = None
 
 
-def _get_agent() -> JiraBatchAgent:
+def _get_agent():
     global _jira_agent  # noqa: PLW0603
     if _jira_agent is None:
+        # 延迟导入避免循环依赖
+        from app.services.ai.agent.jira_batch_agent import JiraBatchAgent
         _jira_agent = JiraBatchAgent()
     return _jira_agent
 
