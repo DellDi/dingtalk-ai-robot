@@ -13,9 +13,10 @@ import collections.abc
 _DEFAULT_CONFIG = {
     "api_key": os.getenv("OPENAI_API_KEY"),
     "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    # "model": "qwen-turbo-2025-07-15",
     "model": "qwen-turbo-latest",
     "model_info": {
-        "vision": True,
+        "vision": False,
         "function_calling": True,
         "json_output": False,
         "multiple_system_messages": True,
@@ -47,17 +48,32 @@ def get_openai_client(**overrides) -> OpenAIChatCompletionClient:
     用法：
         client = get_openai_client(api_key="xxx", model="gpt-4o")
     """
+
+    config = deep_merge_dicts(_DEFAULT_CONFIG.copy(), overrides)
+
+    # 过滤掉 None 的参数，防止传递无效参数
+    valid_config = {k: v for k, v in config.items() if v is not None}
+    valid_config["temperature"] = 0
+    return OpenAIChatCompletionClient(**valid_config)
+
+def get_kimi_k2_client(**overrides) -> OpenAIChatCompletionClient:
+    """
+    获取 Kimi K2 模型客户端实例，使用 OpenAI 兼容的 API。
+    优先级：调用参数 > 默认配置。
+    用法：
+        client = get_kimi_k2_client(model="Moonshot-Kimi-K2-Instruct")
+    """
     config = deep_merge_dicts(_DEFAULT_CONFIG.copy(), overrides)
     # 过滤掉 None 的参数，防止传递无效参数
     valid_config = {k: v for k, v in config.items() if v is not None}
+    valid_config["model"] = "Moonshot-Kimi-K2-Instruct"
     return OpenAIChatCompletionClient(**valid_config)
 
 
-# Gemini 模型客户端默认配置
+# Gemini 模型客户端默认配置 - gemini 不需要输入base_url
 _GEMINI_DEFAULT_CONFIG = {
     "api_key": os.getenv("GEMINI_API_KEY"),
-    "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
-    "model": "gemini-1.5-flash",
+    "model": "gemini-2.5-flash",
     "model_info": {
         "vision": True,
         "function_calling": True,
@@ -74,7 +90,7 @@ def get_gemini_client(**overrides) -> OpenAIChatCompletionClient:
     获取 Gemini 模型客户端实例，使用 OpenAI 兼容的 API。
     优先级：调用参数 > 默认配置。
     用法：
-        client = get_gemini_client(model="gemini-1.5-pro")
+        client = get_gemini_client(model="gemini-2.5-flash")
     """
     config = deep_merge_dicts(_GEMINI_DEFAULT_CONFIG.copy(), overrides)
     # 过滤掉 None 的参数，防止传递无效参数
