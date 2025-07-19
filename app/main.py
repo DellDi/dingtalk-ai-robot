@@ -6,7 +6,6 @@
 """
 
 import asyncio
-import os
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager, suppress
 
@@ -85,10 +84,6 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"❌ 应用启动失败: {e}")
         raise
-
-
-
-
 
 
     yield

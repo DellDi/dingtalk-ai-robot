@@ -144,8 +144,6 @@ class WeeklyReportService:
                 size=50  # 获取足够多的记录
             )
 
-            logger.info(f"获取用户 {user_id} 从 {start_date} 到 {end_date} 的日报记录结果: {reports_result}")
-
             if not reports_result:
                 return {
                     "success": False,
@@ -179,10 +177,10 @@ class WeeklyReportService:
             processed_reports.sort(key=lambda x: x["create_time"], reverse=True)
 
             # 整合所有日报内容
-            combined_content = "\n\n".join(
+            combined_content = "\n".join(
                 list(
                     map(
-                        lambda x: "\n".join(list(map(lambda y: y.get("value", "") if y.get("key") == '今日工作总结（周一至周四填写，只需填写组长个人工作完成情况）' else "", x.get("contents", [])))),
+                        lambda x: " ".join(list(map(lambda y: y.get("value", "") if y.get("key") == '今日工作总结（周一至周四填写，只需填写组长个人工作完成情况）' else "", x.get("contents", [])))),
                         reports,
                     )
                 )

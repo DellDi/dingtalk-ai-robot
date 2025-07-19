@@ -32,17 +32,15 @@ class WeeklyReportAgent:
             name="Summarizer",
             description="""你是一个专业的周报总结者。
             你的任务是根据用户提供的原始文本，生成一份正式、段落有序、且完全没有"AI味"的周报总结。
-            请确保总结内容简洁明了，突出重点，并使用正式的商务语言。
+            请确保总结内容简洁明了，突出重点，并使用正式的、类似研发人员的描述。
 
             周报格式要求：
-            1. 使用Markdown格式
-            2. 包含以下部分：
-               - 本周工作完成情况
-               - 重点项目进展
-               - 遇到的问题及解决方案
-               - 下周工作计划
-            3. 语言正式、简洁、专业
+            1. 使用Markdown格式输出
+            2. 无需包含总标题和小总结，直接输出主体内容即可。
+            3. 语言正式、简洁、专业、研发
             4. 避免使用AI生成内容的常见表达
+            5. 要有重点的开头加粗和冒号，但是要随意一些，不要过分对仗工整
+            6. 三级标题开始即可
             """,
             model_client=self.model_client,
         )
@@ -50,18 +48,19 @@ class WeeklyReportAgent:
         # 2. 创建检察官智能体 (Reviewer Agent) - 使用Gemini大模型
         self.reviewer_agent = AssistantAgent(
             name="Reviewer",
-            description="""你是一个严格的周报检察官。
+            description="""你是一个周报检察官。
             你的任务是审查Summarizer生成的周报总结。
             请检查以下几点：
             1. 格式：段落是否清晰有序？是否符合Markdown格式？
-            2. 语法：是否存在语法错误或拼写错误？
-            3. 正式性：语言是否正式，符合商务报告的风格？
+            2. 语法：是否存在语法错误或拼写错误？拆分的条目和场景是否有重点的开头加粗和冒号？
+            3. 正式性：语言是否正式，符合普通开发人员写的周报？
             4. "AI味"：是否完全去除了AI生成内容的痕迹，听起来像人类撰写？
             5. 完整性：是否包含了所有必要的周报部分？
+            无需总标题和小总结，直接输出主体内容即可。
 
             如果总结不符合要求，请明确指出问题所在，并提供具体的修改建议。
 
-            如果总结完全符合所有要求，请回复以下特定短语来批准并结束任务：
+            如果周报内容基本上符合要求，请回复以下特定短语来批准并结束任务：
             "FINAL_REPORT_APPROVED: [这里是最终的周报总结内容]"
             """,
             model_client=self.gemini_model_client,
@@ -93,18 +92,13 @@ class WeeklyReportAgent:
 
             # 构建任务提示
             task_prompt = f"""
-请根据以下原始日志内容生成一份专业的周报总结：
 
 原始内容：
 {raw_log_content}
 
 要求：
-1. 使用Markdown格式
-2. 内容要正式、专业、简洁
-3. 突出重点工作和成果
-4. 包含问题和解决方案
-5. 提及下周计划
-6. 避免AI生成内容的痕迹
+1. 及时输出终止条件，不要找过三轮
+2. 最终只输出Markdown格式的周报总结，无需其他说明
 """
 
             # 运行智能体团队
@@ -147,10 +141,10 @@ class WeeklyReportAgent:
 
             if final_summary:
                 # 清理可能的markdown代码块标记
-                if final_summary.startswith("```markdown"):
-                    final_summary = final_summary.replace("```markdown", "").strip()
-                if final_summary.endswith("```"):
-                    final_summary = final_summary.replace("```", "").strip()
+                # if final_summary.startswith("```markdown"):
+                #     final_summary = final_summary.replace("```markdown", "").strip()
+                if final_summary.endswith("TERMINATE"):
+                    final_summary = final_summary.replace("TERMINATE", "").strip()
 
                 logger.info("周报总结生成成功")
                 return final_summary
