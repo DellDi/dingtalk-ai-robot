@@ -12,7 +12,7 @@ from loguru import logger
 
 from app.core.logger import cleanup_logs
 from app.services.jira.tasks import check_jira_tasks_compliance
-from app.services.weekly_report_service import weekly_report_service
+from app.core.container import get_weekly_report_service
 from app.services.conversation_log_service import cleanup_conversation_logs
 
 
@@ -89,8 +89,9 @@ async def weekly_report_task():
     try:
         logger.info("开始执行周报生成任务")
 
-        # 执行自动周报任务
-        result = await weekly_report_service.auto_weekly_report_task()
+        # 获取周报服务实例并执行自动周报任务
+        weekly_service = get_weekly_report_service()
+        result = await weekly_service.auto_weekly_report_task()
 
         if result["success"]:
             logger.info("周报生成任务执行成功")

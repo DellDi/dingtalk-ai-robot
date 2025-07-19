@@ -65,11 +65,11 @@ class ApplicationContainer(containers.DeclarativeContainer):
         client_secret=settings.DINGTALK_CLIENT_SECRET,
     )
 
-    # 周报服务 - 单例模式
+    # 周报服务 - 单例模式（不传递ai_handler，让它使用默认的weekly_report_agent）
     weekly_report_service = providers.Singleton(
         WeeklyReportService,
         dingtalk_report_service=dingtalk_report_service,
-        ai_handler=ai_message_handler,
+        ai_handler=None,  # 使用默认的weekly_report_agent
     )
 
 

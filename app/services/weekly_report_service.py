@@ -20,7 +20,7 @@ from app.db_utils import (
     get_latest_weekly_log
 )
 from app.services.ai.weekly_report_agent import weekly_report_agent
-from app.services.dingtalk.report_service import dingtalk_report_service
+from app.services.dingtalk.report_service import dingtalk_report_service as default_dingtalk_service
 
 
 class WeeklyReportService:
@@ -29,7 +29,7 @@ class WeeklyReportService:
     def __init__(self, dingtalk_report_service=None, ai_handler=None):
         """初始化周报服务"""
         self.ai_agent = ai_handler or weekly_report_agent
-        self.dingtalk_service = dingtalk_report_service or dingtalk_report_service
+        self.dingtalk_service = dingtalk_report_service or default_dingtalk_service
 
     def get_current_week_dates(self) -> tuple[str, str]:
         """
@@ -84,6 +84,51 @@ class WeeklyReportService:
                 start_date = start_date or week_start
                 end_date = end_date or today
 
+            # 验证日期格式
+            def validate_date_format(date_str: str, param_name: str) -> str:
+                """验证日期格式并返回标准化的日期字符串"""
+                if not date_str:
+                    return None
+
+                # 检查是否是有效的日期字符串
+                if not isinstance(date_str, str):
+                    raise ValueError(f"{param_name} 必须是字符串类型，当前类型: {type(date_str)}")
+
+                # 检查是否是占位符或无效值
+                if date_str.lower() in ['string', 'none', 'null', '']:
+                    logger.warning(f"检测到无效的{param_name}值: {date_str}，将使用默认值")
+                    return None
+
+                try:
+                    # 尝试解析日期
+                    parsed_date = datetime.strptime(date_str, "%Y-%m-%d")
+                    return parsed_date.strftime("%Y-%m-%d")
+                except ValueError as e:
+                    raise ValueError(f"{param_name} 格式错误，期望格式为YYYY-MM-DD，实际值: {date_str}")
+
+            # 验证并标准化日期
+            try:
+                validated_start_date = validate_date_format(start_date, "start_date")
+                validated_end_date = validate_date_format(end_date, "end_date")
+
+                # 如果验证后的日期为None，使用默认值
+                if not validated_start_date or not validated_end_date:
+                    week_start, _ = self.get_current_week_dates()
+                    today = get_beijing_time_str(fmt="%Y-%m-%d")
+                    validated_start_date = validated_start_date or week_start
+                    validated_end_date = validated_end_date or today
+
+                start_date = validated_start_date
+                end_date = validated_end_date
+
+            except ValueError as e:
+                logger.error(f"日期验证失败: {e}")
+                return {
+                    "success": False,
+                    "message": f"日期格式错误: {str(e)}",
+                    "data": None
+                }
+
             # 转换为时间戳（毫秒）
             start_timestamp = int(datetime.strptime(start_date, "%Y-%m-%d").timestamp() * 1000)
             # 结束日期加一天，确保包含当天的日报
@@ -134,7 +179,14 @@ class WeeklyReportService:
             processed_reports.sort(key=lambda x: x["create_time"], reverse=True)
 
             # 整合所有日报内容
-            combined_content = "\n\n".join(list(map(lambda x: x.get("value", "") if x.get("key") == '今日工作总结（周一至周四填写，只需填写组长个人工作完成情况）' else "", contents)))
+            combined_content = "\n\n".join(
+                list(
+                    map(
+                        lambda x: "\n".join(list(map(lambda y: y.get("value", "") if y.get("key") == '今日工作总结（周一至周四填写，只需填写组长个人工作完成情况）' else "", x.get("contents", [])))),
+                        reports,
+                    )
+                )
+            )
 
             return {
                 "success": True,
@@ -540,5 +592,5 @@ class WeeklyReportService:
             }
 
 
-# 全局实例
-weekly_report_service = WeeklyReportService()
+# 注意：全局实例已移除，请使用依赖注入容器获取实例
+# 从 app.core.container import get_weekly_report_service
