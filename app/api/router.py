@@ -7,7 +7,7 @@ API路由模块
 
 from fastapi import APIRouter
 
-from app.api.v1 import dingtalk, health, jira, knowledge, logs, ssh, conversation,weekly_report
+from app.api.v1 import dingtalk, health, jira, knowledge, logs, ssh, conversation, weekly_report, demo
 
 # 创建主路由器
 api_router = APIRouter()
@@ -21,3 +21,4 @@ api_router.include_router(logs.router, prefix="/logs", tags=["日志管理"])
 api_router.include_router(ssh.router, prefix="/ssh", tags=["服务器管理"])
 api_router.include_router(weekly_report.router, prefix="/weekly-report", tags=["周报管理"])
 api_router.include_router(conversation.router, prefix="/conversation", tags=["对话记录"])
+api_router.include_router(demo.router, prefix="/demo", tags=["依赖注入演示"])

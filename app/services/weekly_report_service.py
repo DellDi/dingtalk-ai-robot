@@ -26,10 +26,10 @@ from app.services.dingtalk.report_service import dingtalk_report_service
 class WeeklyReportService:
     """周报服务类，整合所有周报相关功能"""
 
-    def __init__(self):
+    def __init__(self, dingtalk_report_service=None, ai_handler=None):
         """初始化周报服务"""
-        self.ai_agent = weekly_report_agent
-        self.dingtalk_service = dingtalk_report_service
+        self.ai_agent = ai_handler or weekly_report_agent
+        self.dingtalk_service = dingtalk_report_service or dingtalk_report_service
 
     def get_current_week_dates(self) -> tuple[str, str]:
         """

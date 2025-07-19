@@ -8,7 +8,7 @@
 from typing import Dict, Any, List, Optional
 import json
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, File, Form, UploadFile # Request, Depends 新增
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, File, Form, UploadFile
 from pydantic import BaseModel, Field
 from loguru import logger
 
@@ -18,16 +18,9 @@ from fastapi.concurrency import run_in_threadpool
 
 from app.services.knowledge.retriever import KnowledgeRetriever
 from app.services.knowledge.parser import extract_chunks, UnsupportedDocumentError
+from app.core.container import get_knowledge_retriever_dependency
 
 router = APIRouter()
-
-# 依赖项函数
-async def get_knowledge_retriever(request: Request) -> KnowledgeRetriever:
-    retriever = request.app.state.knowledge_retriever
-    if not retriever or not retriever.initialized:
-        # 在这里可以考虑更细致的错误，比如 retriever.initialized 为 False 的情况
-        raise HTTPException(status_code=503, detail="知识库服务当前不可用或未初始化。")
-    return retriever
 
 class SearchRequest(BaseModel):
     """知识库搜索请求模型"""
@@ -66,8 +59,8 @@ class BulkUploadResponse(BaseModel):
 
 @router.post("/search", response_model=SearchResponse)
 async def search_knowledge(
-    request_data: SearchRequest, # 重命名以避免与 FastAPI Request 冲突
-    retriever: KnowledgeRetriever = Depends(get_knowledge_retriever) # 注入依赖
+    request_data: SearchRequest,
+    retriever: KnowledgeRetriever = Depends(get_knowledge_retriever_dependency)
 ):
     """
     搜索知识库
@@ -87,7 +80,7 @@ async def search_knowledge(
 @router.post("/add_document", response_model=DocumentResponse)
 async def add_document_to_knowledge_base(
     doc_request: DocumentRequest,
-    retriever: KnowledgeRetriever = Depends(get_knowledge_retriever) # 注入依赖
+    retriever: KnowledgeRetriever = Depends(get_knowledge_retriever_dependency)
 ):
     """
     添加单个文档到知识库
@@ -111,7 +104,7 @@ async def add_document_to_knowledge_base(
 async def upload_document_to_knowledge_base(
     files: List[UploadFile] = File(..., description="支持 txt / md / pdf / docx"),
     metadata: Optional[str] = Form(None, description="可选的 JSON 字符串元数据"),
-    retriever: KnowledgeRetriever = Depends(get_knowledge_retriever),
+    retriever: KnowledgeRetriever = Depends(get_knowledge_retriever_dependency),
 ):
     """上传一个或多个文档并写入知识库。"""
 
