@@ -214,8 +214,11 @@ class DingTalkClient:
                     self.stream_client.stop()
                 # 设置为None以便垃圾回收
                 self.stream_client = None
+                logger.info("钉钉Stream客户端已停止")
             except Exception as e:
-                logger.error(f"停止钉钉Stream客户端异常: {e}")
+                logger.warning(f"停止钉钉Stream客户端时出现异常: {e}")
+                # 即使出现异常，也要重置状态
+                self.stream_client = None
 
 
 class RobotMessageHandler(ChatbotHandler):
