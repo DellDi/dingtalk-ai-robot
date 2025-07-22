@@ -32,6 +32,11 @@
 - **`ssh-intelligent-command-team.md`** - SSH 智能命令团队
 
 ### **服务功能**
+- **`CREATE_REPORT_REFACTOR_SUMMARY.md`** - /create-report 接口改造总结
+  - 模版名称替代ID的参数优化
+  - 钉钉模版信息动态获取
+  - 智能内容格式化和AI增强
+  - 上周工作列表化处理
 - **`weekly-report-service-fix.md`** - 周报服务修复
 - **`weekly_report_flow.md`** - 周报流程
 - **`conversation_management.md`** - 对话管理
@@ -71,8 +76,12 @@
 1. 查看对应的功能增强文档
 2. 参考 `dependency-injection-guide.md` 了解如何正确使用依赖注入
 
+### **周报接口改造**
+1. `CREATE_REPORT_REFACTOR_SUMMARY.md` - 了解最新的接口改造详情
+2. 查看改造后的API使用示例和测试方法
+
 ---
 
-**最后更新**: 2025-07-19  
-**维护者**: AI Assistant  
-**状态**: 已清理过时文档，保持最新状态
+**最后更新**: 2025-07-22
+**维护者**: AI Assistant
+**状态**: 已添加 /create-report 接口改造文档，保持最新状态

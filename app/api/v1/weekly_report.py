@@ -32,7 +32,8 @@ class CreateReportRequest(BaseModel):
     """创建钉钉日报请求模型"""
     summary_content: str = Field(..., description="周报总结内容")
     user_id: Optional[str] = Field(None, description="用户ID，为空则使用第一个用户")
-    template_id: Optional[str] = Field(None, description="钉钉日报模版ID")
+    template_name: str = Field("产品研发中心组长日报及周报(导入上篇)", description="钉钉日报模版名称")
+    template_content: Optional[str] = Field(None, description="额外的模版内容，如果提供将与周报内容结合生成最终版本")
 
 
 # 响应模型
@@ -268,16 +269,18 @@ async def create_dingtalk_report(
 
     - **summary_content**: 周报总结内容
     - **user_id**: 用户ID，为空则使用第一个用户
-    - **template_id**: 钉钉日报模版ID，为空则使用默认模版
+    - **template_name**: 钉钉日报模版名称，默认为"产品研发中心组长日报及周报(导入上篇)"
+    - **template_content**: 额外的模版内容，如果提供将与周报内容结合生成最终版本
 
     将AI生成的周报内容格式化并通过钉钉日报接口发送
     """
     try:
-        logger.info(f"API调用: 创建钉钉日报, user_id={request.user_id}")
+        logger.info(f"API调用: 创建钉钉日报, user_id={request.user_id}, template_name={request.template_name}")
         result = await weekly_service.create_and_send_weekly_report(
             request.summary_content,
             request.user_id,
-            request.template_id
+            request.template_name,
+            request.template_content
         )
 
         if result["success"]:
