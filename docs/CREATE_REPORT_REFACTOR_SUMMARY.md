@@ -42,8 +42,8 @@ async def get_template_by_name(self, template_name: str, user_id: str) -> Option
 #### 改造内容格式化方法
 ```python
 def format_weekly_report_content(
-    self, 
-    summary_content: str, 
+    self,
+    summary_content: str,
     template_fields: List[Dict] = None
 ) -> List[Dict[str, Any]]:
     """根据模版字段动态格式化内容"""
@@ -51,7 +51,6 @@ def format_weekly_report_content(
 
 #### 新增辅助方法
 - `_format_content_by_template_fields()`: 根据模版字段格式化
-- `_match_content_for_field()`: 智能匹配字段内容
 - `_convert_to_list_format()`: 转换"上周工作"为列表格式
 
 ### 3. 周报服务升级 (`app/services/weekly_report_service.py`)
@@ -59,9 +58,9 @@ def format_weekly_report_content(
 **修改方法签名:**
 ```python
 async def create_and_send_weekly_report(
-    self, 
-    summary_content: str, 
-    user_id: str = None, 
+    self,
+    summary_content: str,
+    user_id: str = None,
     template_name: str = "产品研发中心组长日报及周报(导入上篇)",
     template_content: str = None
 ) -> Dict[str, Any]:
@@ -132,7 +131,7 @@ POST /api/v1/weekly-report/create-report
 POST /api/v1/weekly-report/create-report
 {
   "summary_content": "### 本周工作完成情况\n- 完成了功能开发",
-  "user_id": "test_user", 
+  "user_id": "test_user",
   "template_name": "产品研发中心组长日报及周报(导入上篇)",
   "template_content": "请重点突出项目进展和风险控制"
 }

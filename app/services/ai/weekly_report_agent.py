@@ -36,11 +36,11 @@ class WeeklyReportAgent:
 
             周报格式要求：
             1. 使用Markdown格式输出
-            2. 无需包含总标题和小总结，直接输出主体内容即可。
+            2. 无需包含大标题和小总结：比如说"周报总结"等字样。
             3. 语言正式、简洁、专业、研发
             4. 避免使用AI生成内容的常见表达
             5. 要有重点的开头加粗和冒号，但是要随意一些，不要过分对仗工整
-            6. 三级标题开始即可
+            6. 三级标题开始即可、只能使用三级标题和四级标题
             """,
             model_client=self.model_client,
         )
@@ -55,8 +55,8 @@ class WeeklyReportAgent:
             2. 语法：是否存在语法错误或拼写错误？拆分的条目和场景是否有重点的开头加粗和冒号？
             3. 正式性：语言是否正式，符合普通开发人员写的周报？
             4. "AI味"：是否完全去除了AI生成内容的痕迹，听起来像人类撰写？
-            5. 完整性：是否包含了所有必要的周报部分？
-            无需总标题和小总结，直接输出主体内容即可。
+            5. 不要包含大标题：比如说"周报总结"等字样
+            6. 只能使用三级标题和四级标题
 
             如果总结不符合要求，请明确指出问题所在，并提供具体的修改建议。
 
@@ -97,7 +97,7 @@ class WeeklyReportAgent:
 {raw_log_content}
 
 要求：
-1. 及时输出终止条件，不要找过三轮
+1. 及时输出终止条件，不要超过三轮审核的过程
 2. 最终只输出Markdown格式的周报总结，无需其他说明
 """
 
@@ -141,8 +141,8 @@ class WeeklyReportAgent:
 
             if final_summary:
                 # 清理可能的markdown代码块标记
-                # if final_summary.startswith("```markdown"):
-                #     final_summary = final_summary.replace("```markdown", "").strip()
+                if final_summary.startswith("```markdown"):
+                    final_summary = final_summary.replace("```markdown", "").strip()
                 if final_summary.endswith("TERMINATE"):
                     final_summary = final_summary.replace("TERMINATE", "").strip()
 

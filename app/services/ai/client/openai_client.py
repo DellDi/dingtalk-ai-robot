@@ -60,7 +60,7 @@ def get_openai_client(**overrides) -> OpenAIChatCompletionClient:
     valid_config = {k: v for k, v in config.items() if v is not None}
     valid_config["temperature"] = 0
 
-    logger.info(f"OpenAIChatCompletionClient创建成功: {valid_config}")
+    # logger.info(f"OpenAIChatCompletionClient创建成功: {valid_config}")
     return OpenAIChatCompletionClient(**valid_config)
 
 def get_kimi_k2_client(**overrides) -> OpenAIChatCompletionClient:
@@ -74,7 +74,7 @@ def get_kimi_k2_client(**overrides) -> OpenAIChatCompletionClient:
     # 过滤掉 None 的参数，防止传递无效参数
     valid_config = {k: v for k, v in config.items() if v is not None}
     valid_config["model"] = "Moonshot-Kimi-K2-Instruct"
-    logger.info(f"Kimi K2 模型客户端创建成功: {valid_config}")
+    # logger.info(f"Kimi K2 模型客户端创建成功: {valid_config}")
     return OpenAIChatCompletionClient(**valid_config)
 
 

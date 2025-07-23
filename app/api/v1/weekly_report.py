@@ -36,6 +36,14 @@ class CreateReportRequest(BaseModel):
     template_content: Optional[str] = Field(None, description="额外的模版内容，如果提供将与周报内容结合生成最终版本")
 
 
+class SaveReportRequest(BaseModel):
+    """保存钉钉日志内容请求模型"""
+    summary_content: str = Field(..., description="日志内容")
+    user_id: Optional[str] = Field(None, description="用户ID，为空则使用第一个用户")
+    template_name: str = Field("产品研发中心组长日报及周报(导入上篇)", description="钉钉日报模版名称")
+    template_content: Optional[str] = Field(None, description="额外的模版内容，如果提供将与日志内容结合生成最终版本")
+
+
 # 响应模型
 class ApiResponse(BaseModel):
     """API响应模型"""
@@ -292,6 +300,42 @@ async def create_dingtalk_report(
 
     except Exception as e:
         logger.error(f"创建钉钉日报API异常: {e}")
+        raise HTTPException(status_code=500, detail=f"服务器内部错误: {str(e)}")
+
+
+@router.post("/save-report", response_model=ApiResponse, summary="保存钉钉日报内容")
+async def save_dingtalk_report(
+    request: SaveReportRequest,
+    weekly_service: WeeklyReportService = Depends(get_weekly_report_service_dependency)
+):
+    """
+    将内容保存为钉钉日报（不发送到群聊）
+
+    - **summary_content**: 日志内容
+    - **user_id**: 用户ID，为空则使用第一个用户
+    - **template_name**: 钉钉日报模版名称，默认为"产品研发中心组长日报及周报(导入上篇)"
+    - **template_content**: 额外的模版内容，如果提供将与日志内容结合生成最终版本
+
+    将内容格式化并通过钉钉日报接口保存（不发送到群聊）
+    """
+    try:
+        logger.info(f"API调用: 保存钉钉日报内容, user_id={request.user_id}, template_name={request.template_name}")
+        result = await weekly_service.save_weekly_report(
+            request.summary_content,
+            request.user_id,
+            request.template_name,
+            request.template_content
+        )
+
+        if result["success"]:
+            logger.info("钉钉日报内容保存成功")
+        else:
+            logger.warning(f"钉钉日报内容保存失败: {result['message']}")
+
+        return ApiResponse(**result)
+
+    except Exception as e:
+        logger.error(f"保存钉钉日报内容API异常: {e}")
         raise HTTPException(status_code=500, detail=f"服务器内部错误: {str(e)}")
 
 

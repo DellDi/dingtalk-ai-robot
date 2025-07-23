@@ -139,6 +139,9 @@ class WeeklyReportService:
             logger.info(f"获取用户 {user_id} 从 {start_date} 到 {end_date} 的日报记录")
 
             # 调用钉钉服务获取日报记录
+            logger.info(
+                f"调用钉钉服务获取日报记录，参数：user_id={user_id}, start_time={start_timestamp}, end_time={end_timestamp}"
+            )
             reports_result = await self.dingtalk_service.list_reports(
                 user_id=user_id,
                 start_time=start_timestamp,
@@ -147,10 +150,12 @@ class WeeklyReportService:
             )
 
             if not reports_result:
+                logger.error("钉钉服务返回空结果，获取日报记录失败")
                 return {"success": False, "message": "获取钉钉日报记录失败", "data": None}
 
             # 处理日报记录
             reports = reports_result.get("data_list", [])
+            logger.info(f"钉钉服务返回日报记录数量: {len(reports)}")
             processed_reports = []
 
             for report in reports:
@@ -195,6 +200,23 @@ class WeeklyReportService:
                     )
                 )
             )
+
+            logger.info(f"整合后的日报内容长度: {len(combined_content)} 字符")
+            if len(combined_content) < 10:
+                logger.warning(f"整合后的日报内容过短，可能存在问题: '{combined_content}'")
+
+            # 记录每条日报的关键字段，帮助排查
+            for i, report in enumerate(reports[:3]):  # 只记录前3条，避免日志过长
+                logger.debug(f"日报记录 #{i+1}:")
+                logger.debug(f"  - report_id: {report.get('report_id')}")
+                logger.debug(f"  - template_name: {report.get('template_name')}")
+                logger.debug(f"  - creator_name: {report.get('creator_name')}")
+                contents = report.get("contents", [])
+                logger.debug(f"  - contents数量: {len(contents)}")
+                for j, content in enumerate(contents[:2]):  # 只记录前2个内容字段
+                    logger.debug(
+                        f"    - content #{j+1}: key={content.get('key')}, value长度={len(content.get('value', ''))}"
+                    )
 
             return {
                 "success": True,
@@ -345,17 +367,20 @@ class WeeklyReportService:
                     return {"success": False, "message": "未找到用户信息", "data": None}
 
             # 1. 根据模版名称获取模版信息
+            logger.info(f"开始获取模版信息: template_name={template_name}, user_id={user_id}")
             template_info = await self.dingtalk_service.get_template_by_name(template_name, user_id)
             if not template_info:
+                logger.error(f"未找到模版: {template_name}")
                 return {"success": False, "message": f"未找到模版: {template_name}", "data": None}
             template_id = template_info.get("id")
             template_fields = template_info.get("fields", [])
+            logger.info(
+                f"成功获取模版信息: template_id={template_id}, fields数量={len(template_fields)}"
+            )
 
             # 2. 如果提供了额外的模版内容，调用周报智能体生成最终内容
             final_summary_content = summary_content
-            if template_content:
-                logger.info("检测到额外模版内容，调用周报智能体生成最终版本")
-                combined_prompt = f"""
+            combined_prompt = f"""
 请根据以下周报总结和模版内容，生成最终的周报：
 
 周报总结：
@@ -366,20 +391,24 @@ class WeeklyReportService:
 
 请将两部分内容合理结合，生成一份完整的周报。
 """
-                # 调用AI智能体生成最终内容
-                ai_result = await self.ai_agent.generate_weekly_summary(combined_prompt)
-                if ai_result:
-                    final_summary_content = ai_result
-                    logger.info("周报智能体生成最终内容成功")
-                else:
-                    logger.warning("周报智能体生成失败，使用原始内容")
+            # 调用AI智能体生成最终内容
+            ai_result = await self.ai_agent.generate_weekly_summary(combined_prompt)
+            if ai_result:
+                final_summary_content = ai_result
+                logger.info("周报智能体生成最终内容成功")
+            else:
+                logger.warning("周报智能体生成失败，使用原始内容")
 
             # 3. 格式化内容为钉钉日报格式
+            logger.info("开始格式化内容为钉钉日报格式")
             formatted_contents = self.dingtalk_service.format_weekly_report_content(
                 final_summary_content, template_fields
             )
 
             # 4. 创建钉钉日报
+            logger.info(
+                f"开始创建钉钉日报: user_id={user_id}, template_id={template_id}, to_chat=True"
+            )
             report_id = await self.dingtalk_service.create_report(
                 user_id=user_id,
                 template_id=template_id,
@@ -388,6 +417,7 @@ class WeeklyReportService:
             )
 
             if report_id:
+                logger.info(f"钉钉日报创建成功: report_id={report_id}")
                 # 保存到数据库
                 week_start, week_end = self.get_current_week_dates()
                 log_id = save_weekly_log(
@@ -398,6 +428,7 @@ class WeeklyReportService:
                     summary_content=summary_content,
                     dingtalk_report_id=report_id,
                 )
+                logger.info(f"周报记录已保存到数据库: log_id={log_id}")
 
                 return {
                     "success": True,
@@ -417,6 +448,111 @@ class WeeklyReportService:
         except Exception as e:
             logger.error(f"创建并发送周报时发生错误: {e}")
             return {"success": False, "message": f"发送周报失败: {str(e)}", "data": None}
+
+    async def save_weekly_report(
+        self,
+        summary_content: str,
+        user_id: str = None,
+        template_name: str = "产品研发中心组长日报及周报(导入上篇)",
+        template_content: str = None,
+    ) -> Dict[str, Any]:
+        """
+        保存周报内容到钉钉（不发送到群聊）
+
+        Args:
+            summary_content: 周报总结内容
+            user_id: 用户ID
+            template_name: 钉钉日报模版名称
+            template_content: 额外的模版内容
+
+        Returns:
+            包含保存结果的字典
+        """
+        try:
+            # 获取用户ID
+            if not user_id:
+                user_id = get_first_user_id()
+                if not user_id:
+                    return {"success": False, "message": "未找到用户信息", "data": None}
+
+            # 1. 根据模版名称获取模版信息
+            logger.info(f"开始获取模版信息: template_name={template_name}, user_id={user_id}")
+            template_info = await self.dingtalk_service.get_template_by_name(template_name, user_id)
+            if not template_info:
+                logger.error(f"未找到模版: {template_name}")
+                return {"success": False, "message": f"未找到模版: {template_name}", "data": None}
+            template_id = template_info.get("id")
+            template_fields = template_info.get("fields", [])
+            logger.info(
+                f"成功获取模版信息: template_id={template_id}, fields数量={len(template_fields)}"
+            )
+
+            # 2. 如果提供了额外的模版内容，调用周报智能体生成最终内容
+            final_summary_content = summary_content
+            combined_prompt = f"""
+请根据以下周报总结和模版内容，生成最终的周报：
+
+周报总结：
+{summary_content}
+
+模版内容：
+{template_content}
+
+请将两部分内容合理结合，生成一份完整的周报。
+"""
+            # 调用AI智能体生成最终内容
+            ai_result = await self.ai_agent.generate_weekly_summary(combined_prompt)
+            if ai_result:
+                final_summary_content = ai_result
+                logger.info("周报智能体生成最终内容成功")
+            else:
+                logger.warning("周报智能体生成失败，使用原始内容")
+
+            # 3. 格式化内容为钉钉日报格式
+            formatted_contents = self.dingtalk_service.format_weekly_report_content(
+                final_summary_content, template_fields
+            )
+            logger.info(f"开始格式化内容为钉钉日报格式 formatted_contents={formatted_contents}")
+            # 4. 保存钉钉日报内容（不发送到群聊）
+            logger.info(f"开始保存钉钉日报内容: user_id={user_id}, template_id={template_id}")
+            report_id = await self.dingtalk_service.save_report_content(
+                user_id=user_id,
+                template_id=template_id,
+                contents=formatted_contents,
+            )
+
+            if report_id:
+                logger.info(f"钉钉日报内容保存成功: report_id={report_id}")
+                # 保存到数据库
+                week_start, week_end = self.get_current_week_dates()
+                log_id = save_weekly_log(
+                    user_id=user_id,
+                    week_start=week_start,
+                    week_end=week_end,
+                    log_content="保存的日报内容",
+                    summary_content=final_summary_content,
+                    dingtalk_report_id=report_id,
+                )
+                logger.info(f"周报记录已保存到数据库: log_id={log_id}")
+
+                return {
+                    "success": True,
+                    "message": "周报内容保存成功",
+                    "data": {
+                        "report_id": report_id,
+                        "log_id": log_id,
+                        "user_id": user_id,
+                        "template_id": template_id,
+                        "template_name": template_name,
+                        "used_template_content": bool(template_content),
+                    },
+                }
+            else:
+                return {"success": False, "message": "钉钉日报内容保存失败", "data": None}
+
+        except Exception as e:
+            logger.error(f"保存周报内容时发生错误: {e}")
+            return {"success": False, "message": f"保存周报内容失败: {str(e)}", "data": None}
 
     async def auto_weekly_report_task(self) -> Dict[str, Any]:
         """

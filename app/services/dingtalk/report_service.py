@@ -145,10 +145,7 @@ class DingTalkReportService:
             url = f"{self.base_url}/topapi/report/template/getbyname"
             params = {"access_token": access_token}
 
-            data = {
-                "template_name": template_name,
-                "userid": user_id
-            }
+            data = {"template_name": template_name, "userid": user_id}
 
             async with httpx.AsyncClient() as client:
                 response = await client.post(url, params=params, json=data)
@@ -263,7 +260,7 @@ class DingTalkReportService:
 
             data = {"create_report_param": create_param}
 
-            logger.error(f"创建日志请求体: {data}")
+            logger.info(f"创建日志请求体: {data}")
 
             # 创建日志
             async with httpx.AsyncClient() as client:
@@ -284,9 +281,7 @@ class DingTalkReportService:
             return None
 
     def format_weekly_report_content(
-        self,
-        summary_content: str,
-        template_fields: List[Dict] = None
+        self, summary_content: str, template_fields: List[Dict] = None
     ) -> List[Dict[str, Any]]:
         """
         格式化周报内容为钉钉日报格式
@@ -299,30 +294,19 @@ class DingTalkReportService:
             格式化后的内容列表
         """
         try:
-            # 如果提供了模版字段信息，使用模版字段匹配内容
+            # 使用模版字段匹配内容，如果没有提供模版字段，则直接抛出错误
             if template_fields:
                 return self._format_content_by_template_fields(summary_content, template_fields)
 
-            # 否则使用原有的默认格式化逻辑
-            return self._format_content_default(summary_content)
+            # 如果没有模版字段, 直接抛出错误
+            raise ValueError("未提供模版字段信息")
 
         except Exception as e:
             logger.error(f"格式化周报内容时发生错误: {e}")
-            # 返回默认格式
-            return [
-                {
-                    "content_type": "markdown",
-                    "sort": "0",
-                    "type": "1",
-                    "content": summary_content,
-                    "key": "周报总结-错误的提取周报模版",
-                }
-            ]
+            raise e
 
     def _format_content_by_template_fields(
-        self,
-        summary_content: str,
-        template_fields: List[Dict]
+        self, summary_content: str, template_fields: List[Dict]
     ) -> List[Dict[str, Any]]:
         """
         根据模版字段格式化内容
@@ -334,8 +318,6 @@ class DingTalkReportService:
         Returns:
             格式化后的内容列表
         """
-        # 解析Markdown内容，提取不同部分
-        sections = self._parse_markdown_sections(summary_content)
         contents = []
 
         # 按照模版字段的顺序生成内容
@@ -345,245 +327,50 @@ class DingTalkReportService:
             sort_index = field.get("sort", 0)
 
             # 尝试匹配内容
-            matched_content = self._match_content_for_field(field_name, sections)
+            matched_content = summary_content
 
             if matched_content:
                 # 特殊处理包含"上周工作"的字段，转换为列表格式
                 if "上周工作" in field_name:
-                    matched_content = self._convert_to_list_format(matched_content)
-
-                contents.append({
-                    "content_type": "markdown",
-                    "sort": str(sort_index),
-                    "type": str(field_type),
-                    "content": matched_content,
-                    "key": field_name,
-                })
+                    # matched_content = self._convert_to_list_format(matched_content)
+                    contents.append(
+                        {
+                            "content_type": "markdown",
+                            "sort": str(sort_index),
+                            "type": str(field_type),
+                            "content": matched_content,
+                            "key": field_name,
+                        }
+                    )
+                    continue
+                if sort_index == 0:
+                    contents.append(
+                        {
+                            "content_type": "markdown",
+                            "sort": str(sort_index),
+                            "type": str(field_type),
+                            "content": matched_content,
+                            "key": field_name,
+                        }
+                    )
+                else:
+                    contents.append(
+                        {
+                            "content_type": "markdown",
+                            "sort": str(sort_index),
+                            "type": str(field_type),
+                            "content": "-",
+                            "key": field_name,
+                        }
+                    )
+            else:
+                raise ValueError(f"无法匹配到任何内容，字段名称: {field_name}")
 
         # 如果没有匹配到任何内容，使用默认格式
         if not contents:
-            contents.append({
-                "content_type": "markdown",
-                "sort": "0",
-                "type": "1",
-                "content": summary_content,
-                "key": "周报总结",
-            })
+            raise ValueError(f"无法匹配到任何内容，字段名称: {field_name}")
 
         return contents
-
-    def _format_content_default(self, summary_content: str) -> List[Dict[str, Any]]:
-        """
-        使用默认格式化逻辑
-
-        Args:
-            summary_content: AI生成的周报总结内容
-
-        Returns:
-            格式化后的内容列表
-        """
-        # 解析Markdown内容，提取不同部分
-        sections = self._parse_markdown_sections(summary_content)
-
-        contents = []
-        sort_index = 0
-
-        # 本周工作完成情况
-        if "本周工作完成情况" in sections or "工作完成" in sections:
-            content = sections.get("本周工作完成情况") or sections.get("工作完成", "")
-            contents.append(
-                {
-                    "content_type": "markdown",
-                    "sort": str(sort_index),
-                    "type": "1",
-                    "content": content,
-                    "key": "本周工作完成情况",
-                }
-            )
-            sort_index += 1
-
-        # 重点项目进展
-        if "重点项目进展" in sections or "项目进展" in sections:
-            content = sections.get("重点项目进展") or sections.get("项目进展", "")
-            contents.append(
-                {
-                    "content_type": "markdown",
-                    "sort": str(sort_index),
-                    "type": "1",
-                    "content": content,
-                    "key": "重点项目进展",
-                }
-            )
-            sort_index += 1
-
-        # 问题及解决方案
-        if "问题及解决方案" in sections or "问题解决" in sections:
-            content = sections.get("问题及解决方案") or sections.get("问题解决", "")
-            contents.append(
-                {
-                    "content_type": "markdown",
-                    "sort": str(sort_index),
-                    "type": "1",
-                    "content": content,
-                    "key": "问题及解决方案",
-                }
-            )
-            sort_index += 1
-
-        # 下周工作计划
-        if "下周工作计划" in sections or "下周计划" in sections:
-            content = sections.get("下周工作计划") or sections.get("下周计划", "")
-            contents.append(
-                {
-                    "content_type": "markdown",
-                    "sort": str(sort_index),
-                    "type": "1",
-                    "content": content,
-                    "key": "下周工作计划",
-                }
-            )
-            sort_index += 1
-
-        # 如果没有找到标准格式，直接使用整个内容
-        if not contents:
-            contents.append(
-                {
-                    "content_type": "markdown",
-                    "sort": "0",
-                    "type": "1",
-                    "content": summary_content,
-                    "key": "周报总结",
-                }
-            )
-
-        return contents
-
-    def _match_content_for_field(self, field_name: str, sections: Dict[str, str]) -> str:
-        """
-        为字段匹配对应的内容
-
-        Args:
-            field_name: 字段名称
-            sections: 解析后的内容部分
-
-        Returns:
-            匹配的内容
-        """
-        # 定义字段名称到内容部分的映射关系
-        field_mappings = {
-            # 工作完成相关
-            "本周工作完成情况": ["本周工作完成情况", "工作完成", "完成工作", "本周完成"],
-            "今日完成工作": ["今日完成工作", "今日工作", "完成工作"],
-            "本周完成工作": ["本周完成工作", "本周工作完成情况", "工作完成"],
-
-            # 项目进展相关
-            "重点项目进展": ["重点项目进展", "项目进展", "项目情况"],
-            "项目进展": ["项目进展", "重点项目进展", "项目情况"],
-
-            # 问题解决相关
-            "问题及解决方案": ["问题及解决方案", "问题解决", "遇到问题", "解决方案"],
-            "未完成工作": ["未完成工作", "待完成", "遗留问题"],
-
-            # 计划相关
-            "下周工作计划": ["下周工作计划", "下周计划", "工作计划", "下周安排"],
-            "明日工作计划": ["明日工作计划", "明日计划", "明天计划"],
-
-            # 上周工作相关
-            "上周工作": ["上周工作", "上周完成", "上周情况"],
-            "上周工作总结": ["上周工作总结", "上周工作", "上周完成"],
-        }
-
-        # 尝试精确匹配
-        if field_name in sections:
-            return sections[field_name]
-
-        # 尝试通过映射关系匹配
-        possible_keys = field_mappings.get(field_name, [field_name])
-        for key in possible_keys:
-            if key in sections:
-                return sections[key]
-
-        # 尝试模糊匹配（包含关系）
-        for section_key, section_content in sections.items():
-            if any(keyword in section_key for keyword in possible_keys):
-                return section_content
-            if any(keyword in field_name for keyword in [section_key]):
-                return section_content
-
-        return ""
-
-    def _convert_to_list_format(self, content: str) -> str:
-        """
-        将内容转换为列表格式（每行前面加"-"）
-
-        Args:
-            content: 原始内容
-
-        Returns:
-            转换后的列表格式内容
-        """
-        if not content.strip():
-            return content
-
-        lines = content.strip().split('\n')
-        formatted_lines = []
-
-        for line in lines:
-            line = line.strip()
-            if line:
-                # 如果行已经是列表格式，保持不变
-                if line.startswith('-') or line.startswith('*') or line.startswith('+'):
-                    formatted_lines.append(line)
-                # 如果是数字列表，转换为无序列表
-                elif line.split('.')[0].strip().isdigit():
-                    # 移除数字前缀，添加"-"
-                    content_part = '.'.join(line.split('.')[1:]).strip()
-                    if content_part:
-                        formatted_lines.append(f"- {content_part}")
-                else:
-                    # 普通文本行，添加"-"前缀
-                    formatted_lines.append(f"- {line}")
-
-        return '\n'.join(formatted_lines)
-
-    def _parse_markdown_sections(self, content: str) -> Dict[str, str]:
-        """
-        解析Markdown内容的不同部分
-
-        Args:
-            content: Markdown内容
-
-        Returns:
-            解析后的部分字典
-        """
-        sections = {}
-        current_section = None
-        current_content = []
-
-        lines = content.split("\n")
-
-        for line in lines:
-            line = line.strip()
-
-            # 检查是否是标题行
-            if line.startswith("#"):
-                # 保存上一个部分
-                if current_section and current_content:
-                    sections[current_section] = "\n".join(current_content).strip()
-
-                # 开始新部分
-                current_section = line.lstrip("#").strip()
-                current_content = []
-            else:
-                # 添加到当前部分
-                if line:  # 忽略空行
-                    current_content.append(line)
-
-        # 保存最后一个部分
-        if current_section and current_content:
-            sections[current_section] = "\n".join(current_content).strip()
-
-        return sections
 
 
 # 全局实例
