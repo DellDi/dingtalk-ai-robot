@@ -15,7 +15,7 @@ from app.core.container import get_weekly_report_service_dependency
 
 
 # 创建路由器
-router = APIRouter(prefix="/weekly-report", tags=["周报管理"])
+router = APIRouter()
 
 
 # 请求模型

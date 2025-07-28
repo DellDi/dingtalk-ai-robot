@@ -64,7 +64,7 @@ async def cleanup_logs_task():
     """
     try:
         logger.info("开始执行日志清理任务")
-        await cleanup_logs()
+        cleanup_logs()
         logger.info("日志清理任务完成")
     except Exception as e:
         logger.error(f"日志清理任务失败: {e}")

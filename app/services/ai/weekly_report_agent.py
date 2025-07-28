@@ -21,7 +21,7 @@ class WeeklyReportAgent:
 
     def __init__(self):
         """初始化周报智能体"""
-        self.model_client = get_openai_client(model_info={"json_output": False})
+        self.model_client = get_openai_client(model="qwen-turbo-latest",model_info={"json_output": False})
         self.gemini_model_client = get_gemini_client(model_info={"json_output": False})
         self._init_agents_and_groupchat()
 
@@ -36,11 +36,12 @@ class WeeklyReportAgent:
 
             周报格式要求：
             1. 使用Markdown格式输出
-            2. 无需包含大标题和小总结：比如说"周报总结"等字样。
+            2. 不能包含大标题和小总结：比如说"周报总结"等字样。
             3. 语言正式、简洁、专业、研发
             4. 避免使用AI生成内容的常见表达
             5. 要有重点的开头加粗和冒号，但是要随意一些，不要过分对仗工整
             6. 三级标题开始即可、只能使用三级标题和四级标题
+            7. 禁止使用包含 # 和 ## 的标题和内容
             """,
             model_client=self.model_client,
         )
@@ -55,8 +56,9 @@ class WeeklyReportAgent:
             2. 语法：是否存在语法错误或拼写错误？拆分的条目和场景是否有重点的开头加粗和冒号？
             3. 正式性：语言是否正式，符合普通开发人员写的周报？
             4. "AI味"：是否完全去除了AI生成内容的痕迹，听起来像人类撰写？
-            5. 不要包含大标题：比如说"周报总结"等字样
+            5. 禁止包含大标题：比如说"周报总结"等字样，和总结内容重复
             6. 只能使用三级标题和四级标题
+            7. 禁止使用包含 # 和 ## 的标题和内容
 
             如果总结不符合要求，请明确指出问题所在，并提供具体的修改建议。
 
