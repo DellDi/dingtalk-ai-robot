@@ -18,8 +18,7 @@ load_dotenv()
 _DEFAULT_CONFIG = {
     "api_key": os.getenv("OPENAI_API_KEY"),
     "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    # "model": "qwen-turbo-2025-07-15",
-    # "model": "qwen-plus-latest",
+    # "model": "qwen-flash",
     "model": "qwen3-coder-plus",
     "model_info": {
         "vision": False,
